@@ -1504,6 +1504,46 @@ app.post('/api/super-admin/users/:id/balance', auth, superAdminOnly, asyncRoute(
   }
 }));
 
+app.get('/api/auth/google-config', asyncRoute(async (_req, res) => {
+  res.json({ ok: true, enabled: Boolean(GOOGLE_CLIENT_ID), clientId: GOOGLE_CLIENT_ID || '' });
+}));
+
+app.post('/api/auth/google', authLimiter, asyncRoute(async (req, res) => {
+  if (!googleClient) throw Object.assign(new Error('Google OAuth is not configured.'), { status: 503 });
+  const { credential, nonce, referrerCode } = req.body;
+  if (!credential || typeof credential !== 'string') throw Object.assign(new Error('Google credential is required.'), { status: 400 });
+  const ticket = await googleClient.verifyIdToken({ idToken: credential });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email || !payload.sub) throw Object.assign(new Error('Invalid Google credential.'), { status: 401 });
+  if (nonce && payload.nonce !== nonce) throw Object.assign(new Error('Nonce mismatch.'), { status: 401 });
+  const email = normalizeEmail(payload.email);
+  const googleId = payload.sub;
+  const conn = await requireDb().getConnection();
+  try {
+    await conn.beginTransaction();
+    const [existing] = await conn.query('SELECT * FROM users WHERE google_id = ? LIMIT 1', [googleId]);
+    let user = existing[0];
+    if (!user) {
+      const [emailExists] = await conn.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+      if (emailExists.length) throw Object.assign(new Error('Email already registered with another account.'), { status: 400 });
+      const referralCode = await generateReferralCode(conn);
+      const [result] = await conn.query('INSERT INTO users (name, email, google_id, password_hash, referral_code) VALUES (?, ?, ?, ?, ?)', [payload.name || email.split('@')[0], email, googleId, '', referralCode]);
+      const [newUser] = await conn.query('SELECT * FROM users WHERE id = ? LIMIT 1', [result.insertId]);
+      user = newUser[0];
+      if (referrerCode) await linkReferralTree(conn, user.id, referrerCode);
+    }
+    await conn.commit();
+    const token = signToken(user);
+    await logAudit(user.id, 'auth.google_success', { email }, req);
+    res.json({ ok: true, token, user: apiUser(user) });
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}));
+
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR, { maxAge: '7d', index: false, extensions: ['html'] }));
   app.get(/^\/(?!api).*/, (_req, res) => fs.existsSync(INDEX_HTML) ? res.sendFile(INDEX_HTML) : res.status(500).send('Frontend not built.'));
