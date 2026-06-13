@@ -59,7 +59,7 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       "default-src": ["'self'"],
-      "script-src": ["'self'", 'https://accounts.google.com'],
+      "script-src": ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
       "style-src": ["'self'", "'unsafe-inline'"],
       "img-src": ["'self'", 'data:', 'https:'],
       "connect-src": ["'self'", 'https://api.paystack.co', 'https://accounts.google.com'],
