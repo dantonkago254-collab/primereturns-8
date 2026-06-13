@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { TrendingUp, Mail, Lock, User as UserIcon, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
@@ -16,10 +16,7 @@ export const LoginPage = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [googleEnabled, setGoogleEnabled] = useState(false);
   const [githubEnabled, setGithubEnabled] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const setSession = useAuthStore(state => state.setSession);
 
   useEffect(() => {
@@ -53,87 +50,6 @@ export const LoginPage = () => {
       .then((config) => setGithubEnabled(config.enabled))
       .catch(() => setGithubEnabled(false));
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadGoogle = async () => {
-      try {
-        const config = await apiFetch<{ enabled: boolean; clientId: string }>('/api/auth/google-config', { auth: false });
-        if (!config.enabled || !config.clientId || cancelled) return;
-        setGoogleEnabled(true);
-
-        await new Promise<void>((resolve, reject) => {
-          if ((window as any).google?.accounts?.id) return resolve();
-          const existing = document.getElementById('google-identity-script');
-          if (existing) {
-            existing.addEventListener('load', () => resolve(), { once: true });
-            existing.addEventListener('error', () => reject(new Error('Google script failed to load.')), { once: true });
-            return;
-          }
-          const script = document.createElement('script');
-          script.id = 'google-identity-script';
-          script.src = 'https://accounts.google.com/gsi/client';
-          script.async = true;
-          script.defer = true;
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Google script failed to load.'));
-          document.head.appendChild(script);
-        });
-
-        if (cancelled || !googleButtonRef.current) return;
-        const googleNonce =
-          (window.crypto && 'randomUUID' in window.crypto)
-            ? window.crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-
-        (window as any).google.accounts.id.initialize({
-          client_id: config.clientId,
-          nonce: googleNonce,
-          callback: async (response: { credential?: string }) => {
-            if (!response.credential) {
-              setErrorMessage('Google did not return a sign-in credential. Try again.');
-              return;
-            }
-
-            try {
-              setGoogleLoading(true);
-              const referrerCode = readPendingReferrer();
-              const auth = await apiFetch<{ token: string; user: any }>('/api/auth/google', {
-                method: 'POST',
-                auth: false,
-                body: JSON.stringify({ credential: response.credential, referrerCode: referrerCode || undefined, nonce: googleNonce }),
-              });
-              consumeReferrer();
-              setSession(auth.user, auth.token);
-              setLocation('/dashboard');
-            } catch (error: any) {
-              setErrorMessage(error.message || 'Google sign-in failed.');
-            } finally {
-              setGoogleLoading(false);
-            }
-          },
-        });
-
-        (window as any).google.accounts.id.renderButton(googleButtonRef.current, {
-          theme: 'outline',
-          size: 'large',
-          type: 'standard',
-          shape: 'pill',
-          text: isRegistering ? 'signup_with' : 'signin_with',
-          width: 320,
-        });
-      } catch (error) {
-        console.warn('Google sign-in is unavailable:', error);
-      }
-    };
-
-    loadGoogle();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isRegistering, setLocation, setSession]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -365,31 +281,20 @@ export const LoginPage = () => {
             </button>
           )}
 
-          {!isRecovering && (googleEnabled || githubEnabled) && (
+          {!isRecovering && githubEnabled && (
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-slate-500 text-xs uppercase tracking-widest font-bold">
                 <div className="h-px bg-white/10 flex-1" />
                 or
                 <div className="h-px bg-white/10 flex-1" />
               </div>
-              {googleEnabled && (
-                <div className="flex justify-center min-h-[44px]">
-                  {googleLoading ? (
-                    <div className="text-slate-400 text-sm font-semibold py-3">Signing in with Google...</div>
-                  ) : (
-                    <div ref={googleButtonRef} />
-                  )}
-                </div>
-              )}
-              {githubEnabled && (
-                <button
-                  type="button"
-                  onClick={startGithubLogin}
-                  className="w-full py-3 rounded-full bg-white text-slate-950 font-bold hover:bg-slate-100 transition-colors"
-                >
-                  Continue with GitHub
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={startGithubLogin}
+                className="w-full py-3 rounded-full bg-white text-slate-950 font-bold hover:bg-slate-100 transition-colors"
+              >
+                Continue with GitHub
+              </button>
             </div>
           )}
         </form>

@@ -11,7 +11,6 @@ const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
-const { OAuth2Client } = require('google-auth-library');
 const nodemailer = require('nodemailer');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -22,10 +21,8 @@ const DIST_DIR = path.join(__dirname, 'dist');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const APP_URL = process.env.APP_URL || '';
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || '';
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || '';
-const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 const MYSQL_CONNECTION_LIMIT = Number(process.env.MYSQL_CONNECTION_LIMIT || 10);
 const CRON_BATCH_SIZE = Math.min(Number(process.env.CRON_BATCH_SIZE || 500), 1000);
 
@@ -59,11 +56,11 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       "default-src": ["'self'"],
-      "script-src": ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
+      "script-src": ["'self'", "'unsafe-inline'"],
       "style-src": ["'self'", "'unsafe-inline'"],
       "img-src": ["'self'", 'data:', 'https:'],
-      "connect-src": ["'self'", 'https://api.paystack.co', 'https://accounts.google.com'],
-      "frame-src": ['https://accounts.google.com'],
+      "connect-src": ["'self'", 'https://api.paystack.co'],
+      "frame-src": ["'none'"],
       "frame-ancestors": ["'none'"],
     },
   },
@@ -688,7 +685,6 @@ app.get('/api/readiness', asyncRoute(async (_req, res) => {
 
   const paystack = paystackKeyStatus();
   addCheck('PAYSTACK_KEYS', paystack.configured && paystack.modesMatch, paystack.configured ? `Paystack ${paystack.publicMode}/${paystack.secretMode}` : 'Paystack keys missing');
-  addCheck('GOOGLE_SIGN_IN', Boolean(GOOGLE_CLIENT_ID), GOOGLE_CLIENT_ID ? 'Google client ID configured' : 'GOOGLE_CLIENT_ID missing; Google sign-in disabled');
   addCheck('PASSWORD_RECOVERY_EMAIL', Boolean(getSmtpTransport()), getSmtpTransport() ? 'SMTP configured for password recovery' : 'SMTP is not configured; reset links cannot be emailed');
 
   if (!pool) {
@@ -806,93 +802,6 @@ app.post('/api/auth/reset-password', authLimiter, asyncRoute(async (req, res) =>
     await conn.commit();
     await logAudit(resetToken.user_id, 'auth.password_reset_completed', {}, req);
     res.json({ ok: true, message: 'Password reset successful. You can now log in.' });
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
-  }
-}));
-
-app.get('/api/auth/google-config', (_req, res) => {
-  const configuredOrigins = [APP_URL, railwayPublicUrl]
-    .filter(Boolean)
-    .map((origin) => origin.replace(/\/$/, ''));
-
-  res.json({
-    ok: true,
-    enabled: Boolean(GOOGLE_CLIENT_ID),
-    clientId: GOOGLE_CLIENT_ID,
-    requiredAuthorizedOrigins: configuredOrigins,
-    message: GOOGLE_CLIENT_ID
-      ? 'Add every requiredAuthorizedOrigins value to Google Cloud Authorized JavaScript origins.'
-      : 'Google sign-in is disabled until GOOGLE_CLIENT_ID is configured.',
-  });
-});
-
-app.post('/api/auth/google', authLimiter, asyncRoute(async (req, res) => {
-  const { credential, referrerCode, nonce } = req.body || {};
-  if (!googleClient || !GOOGLE_CLIENT_ID) {
-    throw Object.assign(new Error('Google sign-in is not configured. Add GOOGLE_CLIENT_ID in your hosting variables.'), { status: 500 });
-  }
-
-  if (!credential || typeof credential !== 'string') {
-    throw Object.assign(new Error('Missing Google credential.'), { status: 400 });
-  }
-
-  if (!nonce || typeof nonce !== 'string' || nonce.length < 16) {
-    throw Object.assign(new Error('Missing or invalid Google nonce.'), { status: 400 });
-  }
-
-  const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
-  const payload = ticket.getPayload();
-
-  if (!payload?.sub || !payload.email) {
-    throw Object.assign(new Error('Google account did not return a verified profile.'), { status: 400 });
-  }
-
-  if (!payload.email_verified) {
-    throw Object.assign(new Error('Google email is not verified.'), { status: 400 });
-  }
-
-  if (payload.nonce !== nonce) {
-    throw Object.assign(new Error('Google nonce verification failed.'), { status: 400 });
-  }
-
-  const normalizedEmail = assertEmail(payload.email);
-  const googleId = payload.sub;
-  const displayName = payload.name || normalizedEmail.split('@')[0];
-  const conn = await requireDb().getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    const [existingByGoogle] = await conn.query('SELECT * FROM users WHERE google_id = ? LIMIT 1 FOR UPDATE', [googleId]);
-    let user = existingByGoogle[0];
-
-    if (!user) {
-      const [existingByEmail] = await conn.query('SELECT * FROM users WHERE email = ? LIMIT 1 FOR UPDATE', [normalizedEmail]);
-      user = existingByEmail[0];
-
-      if (user) {
-        await conn.query('UPDATE users SET google_id = ?, name = COALESCE(NULLIF(name, ""), ?) WHERE id = ?', [googleId, displayName, user.id]);
-      } else {
-        const referralCode = await generateReferralCode(conn);
-        const randomPasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
-        const [result] = await conn.query(
-          'INSERT INTO users (name, email, google_id, password_hash, referral_code, role) VALUES (?, ?, ?, ?, ?, ?)',
-          [displayName, normalizedEmail, googleId, randomPasswordHash, referralCode, 'user']
-        );
-        const newUserId = result.insertId;
-        await linkReferralTree(conn, newUserId, referrerCode);
-      }
-    }
-
-    await conn.commit();
-
-    const [[freshUser]] = await requireDb().query('SELECT * FROM users WHERE google_id = ? OR email = ? ORDER BY google_id = ? DESC LIMIT 1', [googleId, normalizedEmail, googleId]);
-    await logAudit(freshUser.id, 'auth.google_login_success', { email: freshUser.email }, req);
-    res.json({ ok: true, token: signToken(freshUser), user: apiUser(freshUser) });
   } catch (error) {
     await conn.rollback();
     throw error;
@@ -1496,46 +1405,6 @@ app.post('/api/super-admin/users/:id/balance', auth, superAdminOnly, asyncRoute(
 
     const [[updatedUser]] = await requireDb().query('SELECT * FROM users WHERE id = ?', [targetUserId]);
     res.json({ ok: true, user: apiUser(updatedUser) });
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
-  }
-}));
-
-app.get('/api/auth/google-config', asyncRoute(async (_req, res) => {
-  res.json({ ok: true, enabled: Boolean(GOOGLE_CLIENT_ID), clientId: GOOGLE_CLIENT_ID || '' });
-}));
-
-app.post('/api/auth/google', authLimiter, asyncRoute(async (req, res) => {
-  if (!googleClient) throw Object.assign(new Error('Google OAuth is not configured.'), { status: 503 });
-  const { credential, nonce, referrerCode } = req.body;
-  if (!credential || typeof credential !== 'string') throw Object.assign(new Error('Google credential is required.'), { status: 400 });
-  const ticket = await googleClient.verifyIdToken({ idToken: credential });
-  const payload = ticket.getPayload();
-  if (!payload || !payload.email || !payload.sub) throw Object.assign(new Error('Invalid Google credential.'), { status: 401 });
-  if (nonce && payload.nonce !== nonce) throw Object.assign(new Error('Nonce mismatch.'), { status: 401 });
-  const email = normalizeEmail(payload.email);
-  const googleId = payload.sub;
-  const conn = await requireDb().getConnection();
-  try {
-    await conn.beginTransaction();
-    const [existing] = await conn.query('SELECT * FROM users WHERE google_id = ? LIMIT 1', [googleId]);
-    let user = existing[0];
-    if (!user) {
-      const [emailExists] = await conn.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
-      if (emailExists.length) throw Object.assign(new Error('Email already registered with another account.'), { status: 400 });
-      const referralCode = await generateReferralCode(conn);
-      const [result] = await conn.query('INSERT INTO users (name, email, google_id, password_hash, referral_code) VALUES (?, ?, ?, ?, ?)', [payload.name || email.split('@')[0], email, googleId, '', referralCode]);
-      const [newUser] = await conn.query('SELECT * FROM users WHERE id = ? LIMIT 1', [result.insertId]);
-      user = newUser[0];
-      if (referrerCode) await linkReferralTree(conn, user.id, referrerCode);
-    }
-    await conn.commit();
-    const token = signToken(user);
-    await logAudit(user.id, 'auth.google_success', { email }, req);
-    res.json({ ok: true, token, user: apiUser(user) });
   } catch (error) {
     await conn.rollback();
     throw error;
