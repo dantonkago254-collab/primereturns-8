@@ -6,7 +6,8 @@ import {
   Database,
   CheckCircle,
   XCircle,
-  Terminal
+  Terminal,
+  UserCog
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatKSH, cn } from '../lib/utils';
@@ -97,6 +98,32 @@ export const AdminPanel = () => {
     }
   };
 
+  const adjustOwnBalance = async () => {
+    const mode = window.prompt('Type balance action: set, add, or subtract', 'add')?.trim().toLowerCase();
+    if (!mode) return;
+    if (!['set', 'add', 'subtract'].includes(mode)) {
+      alert('Invalid action. Use set, add, or subtract.');
+      return;
+    }
+
+    const amount = window.prompt(`Amount in KSh to ${mode} on your own account:`, '1000');
+    if (!amount) return;
+
+    const reason = window.prompt('Reason for this self balance adjustment:', 'Super admin self-adjustment');
+    if (!reason) return;
+
+    try {
+      await apiFetch('/api/super-admin/me/balance', {
+        method: 'POST',
+        body: JSON.stringify({ mode, amount, reason }),
+      });
+      await reloadAdmin();
+      alert('Your balance has been adjusted and audited.');
+    } catch (error) {
+      alert((error as Error).message || 'Balance adjustment failed.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Admin Header */}
@@ -118,6 +145,7 @@ export const AdminPanel = () => {
               { id: 'cron', icon: Terminal, label: 'Cron Logs' },
               { id: 'activity', icon: Activity, label: 'Activity' },
               { id: 'users', icon: Users, label: 'Users' },
+              ...(currentUser?.role === 'super_admin' ? [{ id: 'my-account', icon: UserCog, label: 'My Account' }] : []),
             ].map(tab => (
               <button
                 key={tab.id}
@@ -347,6 +375,48 @@ export const AdminPanel = () => {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {activeAdminTab === 'my-account' && currentUser?.role === 'super_admin' && (
+          <div className="bg-slate-900 border border-white/5 rounded-[2rem] p-8 max-w-xl">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="bg-violet-500/20 p-3 rounded-xl">
+                <UserCog className="text-violet-400 w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold">My Account</h3>
+                <p className="text-xs text-slate-500">Manage your own super admin balance</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 mb-8">
+              <div className="flex justify-between items-center p-4 bg-slate-950/50 rounded-xl border border-white/5">
+                <span className="text-slate-400 text-sm">Name</span>
+                <span className="font-bold">{currentUser.name}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 bg-slate-950/50 rounded-xl border border-white/5">
+                <span className="text-slate-400 text-sm">Email</span>
+                <span className="font-bold text-sm">{currentUser.email}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 bg-slate-950/50 rounded-xl border border-white/5">
+                <span className="text-slate-400 text-sm">Current Balance</span>
+                <span className="font-black text-emerald-400 text-lg">{formatKSH(currentUser.accountBalance)}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 bg-slate-950/50 rounded-xl border border-white/5">
+                <span className="text-slate-400 text-sm">Role</span>
+                <span className="px-2 py-1 bg-violet-500/10 text-violet-400 text-[10px] font-black rounded uppercase">Super Admin</span>
+              </div>
+            </div>
+
+            <button
+              onClick={adjustOwnBalance}
+              className="w-full py-3 rounded-xl bg-violet-500/20 text-violet-300 font-black text-sm hover:bg-violet-500/30 border border-violet-500/20 transition-colors flex items-center justify-center gap-2"
+            >
+              <UserCog className="w-4 h-4" />
+              Edit My Balance
+            </button>
+            <p className="text-[10px] text-slate-600 text-center mt-3">All self-adjustments are fully audited in the activity log.</p>
           </div>
         )}
       </main>
