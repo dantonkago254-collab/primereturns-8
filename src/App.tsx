@@ -5,6 +5,7 @@ import { AdminPanel } from './pages/AdminPanel';
 import { LoginPage } from './pages/LoginPage';
 import { ReferralPage } from './pages/ReferralPage';
 import { PasswordResetPage } from './pages/PasswordResetPage';
+import { SetupPage } from './pages/SetupPage';
 import { useAuthStore } from './store/useAuthStore';
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={LoginPage} />
       <Route path="/reset-password" component={PasswordResetPage} />
+      <Route path="/setup" component={SetupPage} />
       <Route path="/ref/:code" component={ReferralPage} />
       <Route path="/dashboard">
         {isAuthenticated ? <Dashboard /> : <Redirect to="/login" />}
