@@ -2,6 +2,7 @@
 // The dynamic /ref/:code route handler — uses the useReferralTracking hook.
 import { useReferralTracking } from '../hooks/useReferralTracking';
 import { TrendingUp, Share2 } from 'lucide-react';
+import { AIAssistant } from '../components/AIAssistant';
 
 export const ReferralPage = () => {
   useReferralTracking();
@@ -21,6 +22,7 @@ export const ReferralPage = () => {
           <span>PrimeReturns Growth Engine</span>
         </div>
       </div>
+      <AIAssistant pageContext="referrals" />
     </div>
   );
 };

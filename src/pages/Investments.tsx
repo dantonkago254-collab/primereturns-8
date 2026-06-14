@@ -1,5 +1,6 @@
 import { Plus, Search, Filter, MoreHorizontal, TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { AIAssistant } from '../components/AIAssistant';
 
 const investments = [
   { id: 1, name: 'S&P 500 ETF', category: 'Stock', amount: 25000, current: 28450, change: 13.8, status: 'Active', risk: 'Medium' },
@@ -99,6 +100,7 @@ export const Investments = () => {
           </table>
         </div>
       </div>
+      <AIAssistant pageContext="investments" />
     </div>
   );
 };

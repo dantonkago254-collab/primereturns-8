@@ -16,6 +16,7 @@ import {
 import { useAuthStore } from '../store/useAuthStore';
 import { formatKSH, cn } from '../lib/utils';
 import { ReferralDashboard } from '../components/ReferralDashboard';
+import { AIAssistant } from '../components/AIAssistant';
 import { apiFetch } from '../lib/api';
 
 export const Dashboard = () => {
@@ -488,6 +489,17 @@ export const Dashboard = () => {
           {activeTab === 'referrals' && <ReferralDashboard />}
         </div>
       </main>
+
+      {/* AI Assistant — context-aware for the active tab */}
+      <AIAssistant
+        pageContext={
+          activeTab === 'investments'
+            ? 'investments'
+            : activeTab === 'referrals'
+            ? 'referrals'
+            : 'dashboard'
+        }
+      />
     </div>
   );
 };

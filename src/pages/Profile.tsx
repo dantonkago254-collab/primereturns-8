@@ -1,4 +1,5 @@
 import { User, Mail, Shield, Bell, Lock } from 'lucide-react';
+import { AIAssistant } from '../components/AIAssistant';
 
 export const Profile = () => {
   return (
@@ -105,6 +106,7 @@ export const Profile = () => {
           </button>
         </div>
       </div>
+      <AIAssistant pageContext="account" />
     </div>
   );
 };
