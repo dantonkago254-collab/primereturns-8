@@ -111,11 +111,11 @@ export async function requestWithdrawal(
   const user = findUser(db, input.userId);
   const requestedCents = toCents(input.amount);
 
-  const minimum = toCents('500.00');
+  const minimum = toCents('10000.00');
   const maximum = toCents('500000.00');
 
   if (requestedCents < minimum) {
-    throw new MockTRPCError('BAD_REQUEST', 'Minimum withdrawal amount is KSh 500.');
+    throw new MockTRPCError('BAD_REQUEST', 'Minimum withdrawal amount is KSh 10,000.');
   }
 
   if (requestedCents > maximum) {

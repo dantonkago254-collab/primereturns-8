@@ -22,7 +22,9 @@ export const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [copySuccess, setCopySuccess] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
-  const [selectedAmount, setSelectedAmount] = useState(5000);
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(1000);
+  const [customAmount, setCustomAmount] = useState('');
+  const [isCustom, setIsCustom] = useState(false);
   const [hasDeposited, setHasDeposited] = useState(false);
   const [serverInvestments, setServerInvestments] = useState<any[]>([]);
   const [serverTransactions, setServerTransactions] = useState<any[]>([]);
@@ -40,9 +42,24 @@ export const Dashboard = () => {
     setServerTransactions(data.transactions || []);
   };
 
+  // Resolve the effective deposit amount from either a fixed plan or the custom input
+  const effectiveAmount = isCustom ? (parseFloat(customAmount) || 0) : (selectedAmount ?? 0);
+
+  const getCustomRate = (amount: number): string => {
+    if (amount >= 1000 && amount <= 10000) return '5% daily';
+    if (amount > 10000 && amount <= 100000) return '7.5% daily';
+    if (amount > 100000) return '10% daily';
+    return '—';
+  };
+
   const handlePaystackDeposit = async () => {
     if (!user || !user.email) {
       alert('⚠️ Please login first to make a deposit.');
+      return;
+    }
+
+    if (effectiveAmount < 1000) {
+      alert('Minimum deposit is KSh 1,000.');
       return;
     }
 
@@ -56,9 +73,9 @@ export const Dashboard = () => {
 
       const data = await apiFetch<{ reference: string; authorizationUrl: string }>('/api/paystack/initialize', {
         method: 'POST',
-        body: JSON.stringify({ amount: selectedAmount }),
+        body: JSON.stringify({ amount: effectiveAmount }),
       });
-      localStorage.setItem('primereturns_pending_deposit', JSON.stringify({ reference: data.reference, amount: selectedAmount }));
+      localStorage.setItem('primereturns_pending_deposit', JSON.stringify({ reference: data.reference, amount: effectiveAmount }));
       window.location.href = data.authorizationUrl;
     } catch (error) {
       console.error('Paystack checkout failed:', error);
@@ -176,7 +193,7 @@ export const Dashboard = () => {
               disabled={isDepositing}
               className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-800 transition-colors disabled:opacity-50"
             >
-              {isDepositing ? 'Initializing Gateway...' : `Deposit ${formatKSH(selectedAmount)}`}
+              {isDepositing ? 'Initializing Gateway...' : `Deposit ${formatKSH(effectiveAmount)}`}
             </button>
             <button onClick={handleWithdrawalRequest} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-blue-600/20 hover:bg-blue-500 transition-colors">
               Withdraw
@@ -191,26 +208,78 @@ export const Dashboard = () => {
         </header>
 
         {/* Amount Selector */}
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 mb-6 space-y-5">
           <div>
-            <p className="text-xs font-bold uppercase text-slate-500 tracking-widest mb-1">Select Deposit Amount</p>
-            <p className="text-slate-600 text-sm">Choose an amount to activate your node immediately.</p>
+            <p className="text-xs font-bold uppercase text-slate-500 tracking-widest mb-1">Select Deposit Plan</p>
+            <p className="text-slate-600 text-sm">Choose a fixed plan or enter a custom amount from KSh 1,000.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {[1000, 5000, 10000, 25000, 50000, 100000].map(amount => (
+
+          {/* Fixed plan buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { amount: 1000, label: 'Starter Node', rate: '5% daily', range: 'KSh 1,000–10,000' },
+              { amount: 10000, label: 'Growth Engine', rate: '7.5% daily', range: 'KSh 10,001–100,000' },
+              { amount: 100000, label: 'Titan Core', rate: '10% daily', range: 'KSh 100,001+' },
+            ].map(({ amount, label, rate, range }) => (
               <button
                 key={amount}
-                onClick={() => setSelectedAmount(amount)}
+                onClick={() => { setSelectedAmount(amount); setIsCustom(false); setCustomAmount(''); }}
                 className={cn(
-                  "px-4 py-2 rounded-xl font-bold text-sm transition-all",
-                  selectedAmount === amount
-                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  "flex flex-col items-start p-4 rounded-2xl border-2 transition-all text-left",
+                  !isCustom && selectedAmount === amount
+                    ? "border-blue-600 bg-blue-50"
+                    : "border-slate-100 bg-slate-50 hover:border-slate-200"
                 )}
               >
-                KSh {amount.toLocaleString()}
+                <span className="font-black text-slate-900 text-sm">{label}</span>
+                <span className="text-xs text-slate-500 mt-0.5">{range}</span>
+                <span className={cn(
+                  "mt-2 text-xs font-bold px-2 py-0.5 rounded-full",
+                  !isCustom && selectedAmount === amount
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-200 text-slate-600"
+                )}>{rate}</span>
+                <span className="mt-2 text-base font-black text-slate-900">KSh {amount.toLocaleString()}</span>
               </button>
             ))}
+          </div>
+
+          {/* Custom amount input */}
+          <div className={cn(
+            "rounded-2xl border-2 p-4 transition-all",
+            isCustom ? "border-blue-600 bg-blue-50" : "border-slate-100 bg-slate-50"
+          )}>
+            <p className="text-xs font-bold uppercase text-slate-500 tracking-widest mb-3">Custom Amount</p>
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">KSh</span>
+                <input
+                  type="number"
+                  min={1000}
+                  step={1}
+                  placeholder="e.g. 7500"
+                  value={customAmount}
+                  onChange={(e) => {
+                    setCustomAmount(e.target.value);
+                    setIsCustom(true);
+                    setSelectedAmount(null);
+                  }}
+                  onFocus={() => { setIsCustom(true); setSelectedAmount(null); }}
+                  className="w-full pl-12 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none"
+                />
+              </div>
+              {isCustom && parseFloat(customAmount) >= 1000 && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-bold text-slate-500">Rate:</span>
+                  <span className="text-xs font-black text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                    {getCustomRate(parseFloat(customAmount))}
+                  </span>
+                </div>
+              )}
+              {isCustom && parseFloat(customAmount) > 0 && parseFloat(customAmount) < 1000 && (
+                <span className="text-xs font-bold text-rose-500">Minimum is KSh 1,000</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -300,6 +369,7 @@ export const Dashboard = () => {
                       Platform Withdrawal Terms
                     </h4>
                     <ul className="space-y-1.5 text-xs text-slate-700 font-medium leading-relaxed">
+                      <li>• Minimum withdrawal is KSh 10,000.</li>
                       <li>• Withdrawals have a 14-day cooldown period between successful payouts.</li>
                       <li>• At least 1 active referral is required to initiate a cashout.</li>
                       <li>• Full account balance must be withdrawn per single payout request.</li>

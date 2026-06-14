@@ -48,7 +48,7 @@ describe('requestWithdrawal router - withdrawal gate logic', () => {
   });
 
   it.each([
-    ['300.00', 'Minimum withdrawal amount is KSh 500.'],
+    ['300.00', 'Minimum withdrawal amount is KSh 10,000.'],
     ['600000.00', 'Maximum withdrawal amount is KSh 500,000.'],
   ])('blocks invalid withdrawal amount %s', async (amount, expectedMessage) => {
     const db = createDb({
