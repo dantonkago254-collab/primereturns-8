@@ -1503,6 +1503,57 @@ app.post('/api/super-admin/me/balance', auth, superAdminOnly, asyncRoute(async (
   }
 }));
 
+app.post('/api/setup/create-super-admin', authLimiter, asyncRoute(async (req, res) => {
+  const db = requireDb();
+  const { email, password, name } = req.body || {};
+
+  // Validate name
+  if (!name || String(name).trim().length < 2) {
+    throw Object.assign(new Error('Name must be at least 2 characters.'), { status: 400 });
+  }
+
+  // Validate email
+  const normalizedEmail = assertEmail(email);
+
+  // Validate password — super admin requires at least 12 characters
+  if (typeof password !== 'string' || password.length < 12) {
+    throw Object.assign(new Error('Super admin password must be at least 12 characters.'), { status: 400 });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const cleanName = String(name).trim();
+
+  const [existing] = await db.query('SELECT id FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
+
+  let userId;
+  let action;
+
+  if (existing.length) {
+    userId = existing[0].id;
+    action = 'updated';
+    await db.query(
+      'UPDATE users SET role = ?, password_hash = ?, name = ? WHERE email = ?',
+      ['super_admin', passwordHash, cleanName, normalizedEmail]
+    );
+    console.log(`[Setup] Updated super admin account: ${normalizedEmail}`);
+  } else {
+    action = 'created';
+    const referralCode = await generateReferralCode(db);
+    const [result] = await db.query(
+      'INSERT INTO users (name, email, password_hash, referral_code, role) VALUES (?, ?, ?, ?, ?)',
+      [cleanName, normalizedEmail, passwordHash, referralCode, 'super_admin']
+    );
+    userId = result.insertId;
+    console.log(`[Setup] Created super admin account: ${normalizedEmail}`);
+  }
+
+  const [[user]] = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+
+  await logAudit(userId, 'setup.create_super_admin', { email: normalizedEmail, action }, req);
+
+  res.json({ ok: true, action, user: apiUser(user) });
+}));
+
 async function creditDailyReturns() {
   if (!pool) return;
   const runDate = new Date().toISOString().slice(0, 10);
