@@ -1,83 +1,147 @@
-import { 
-  ShieldAlert, 
-  Activity, 
-  Users, 
-  ArrowUpCircle, 
+import {
+  ShieldAlert,
+  Activity,
+  Users,
+  ArrowUpCircle,
   Database,
   CheckCircle,
   XCircle,
   Terminal,
-  UserCog
+  UserCog,
+  Loader2,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { formatKSH, cn } from '../lib/utils';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../store/useAuthStore';
 
+interface LoadState {
+  loading: boolean;
+  error: string | null;
+}
+
+const initialLoadState = (): LoadState => ({ loading: true, error: null });
+
 export const AdminPanel = () => {
   const currentUser = useAuthStore((state) => state.user);
-  const [activeAdminTab, setActiveAdminTab] = useState('payouts');
+  const [activeAdminTab, setActiveAdminTab] = useState('users');
+
   const [metrics, setMetrics] = useState<any>(null);
+  const [metricsState, setMetricsState] = useState<LoadState>(initialLoadState());
+
   const [activity, setActivity] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [activityState, setActivityState] = useState<LoadState>(initialLoadState());
+
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [withdrawalsState, setWithdrawalsState] = useState<LoadState>(initialLoadState());
+
   const [usersData, setUsersData] = useState<any[]>([]);
+  const [usersState, setUsersState] = useState<LoadState>(initialLoadState());
+
   const [cronLogs, setCronLogs] = useState<any[]>([]);
+  const [cronState, setCronState] = useState<LoadState>(initialLoadState());
 
-  const applyAdminData = (
-    metricsRes: PromiseSettledResult<{ metrics: any }>,
-    activityRes: PromiseSettledResult<{ logs: any[]; payments: any[] }>,
-    withdrawalRes: PromiseSettledResult<{ withdrawals: any[] }>,
-    usersRes: PromiseSettledResult<{ users: any[] }>,
-    cronRes: PromiseSettledResult<{ logs: any[] }>,
-  ) => {
-    if (metricsRes.status === 'fulfilled') setMetrics(metricsRes.value.metrics);
-    if (activityRes.status === 'fulfilled') {
-      setActivity(activityRes.value.logs || []);
-      setPayments(activityRes.value.payments || []);
+  const loadMetrics = useCallback(async () => {
+    setMetricsState({ loading: true, error: null });
+    try {
+      const data = await apiFetch<{ metrics: any }>('/api/admin/metrics');
+      setMetrics(data.metrics);
+      setMetricsState({ loading: false, error: null });
+    } catch (err) {
+      const msg = (err as Error).message || 'Failed to load metrics';
+      console.error('[AdminPanel] metrics error:', msg);
+      setMetricsState({ loading: false, error: msg });
     }
-    if (withdrawalRes.status === 'fulfilled') setWithdrawals(withdrawalRes.value.withdrawals || []);
-    if (usersRes.status === 'fulfilled') setUsersData(usersRes.value.users || []);
-    else console.error('Failed to load users:', usersRes.status === 'rejected' ? usersRes.reason : 'unknown');
-    if (cronRes.status === 'fulfilled') setCronLogs(cronRes.value.logs || []);
-  };
-
-  useEffect(() => {
-    const loadAdmin = async () => {
-      const [metricsRes, activityRes, withdrawalRes, usersRes, cronRes] = await Promise.allSettled([
-        apiFetch<{ metrics: any }>('/api/admin/metrics'),
-        apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity'),
-        apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals'),
-        apiFetch<{ users: any[] }>('/api/admin/users'),
-        apiFetch<{ logs: any[] }>('/api/admin/cron-logs'),
-      ]);
-      applyAdminData(metricsRes, activityRes, withdrawalRes, usersRes, cronRes);
-    };
-
-    loadAdmin();
   }, []);
 
-  const reloadAdmin = async () => {
-    const [metricsRes, activityRes, withdrawalRes, usersRes, cronRes] = await Promise.allSettled([
-      apiFetch<{ metrics: any }>('/api/admin/metrics'),
-      apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity'),
-      apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals'),
-      apiFetch<{ users: any[] }>('/api/admin/users'),
-      apiFetch<{ logs: any[] }>('/api/admin/cron-logs'),
-    ]);
-    applyAdminData(metricsRes, activityRes, withdrawalRes, usersRes, cronRes);
-  };
+  const loadActivity = useCallback(async () => {
+    setActivityState({ loading: true, error: null });
+    try {
+      const data = await apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity');
+      setActivity(data.logs || []);
+      setPayments(data.payments || []);
+      setActivityState({ loading: false, error: null });
+    } catch (err) {
+      const msg = (err as Error).message || 'Failed to load activity';
+      console.error('[AdminPanel] activity error:', msg);
+      setActivityState({ loading: false, error: msg });
+    }
+  }, []);
+
+  const loadWithdrawals = useCallback(async () => {
+    setWithdrawalsState({ loading: true, error: null });
+    try {
+      const data = await apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals');
+      setWithdrawals(data.withdrawals || []);
+      setWithdrawalsState({ loading: false, error: null });
+    } catch (err) {
+      const msg = (err as Error).message || 'Failed to load withdrawals';
+      console.error('[AdminPanel] withdrawals error:', msg);
+      setWithdrawalsState({ loading: false, error: msg });
+    }
+  }, []);
+
+  const loadUsers = useCallback(async () => {
+    setUsersState({ loading: true, error: null });
+    try {
+      console.log('[AdminPanel] fetching /api/admin/users …');
+      const data = await apiFetch<{ users: any[] }>('/api/admin/users');
+      console.log('[AdminPanel] users response:', data);
+      setUsersData(data.users || []);
+      setUsersState({ loading: false, error: null });
+    } catch (err) {
+      const msg = (err as Error).message || 'Failed to load users';
+      console.error('[AdminPanel] users error:', msg, err);
+      setUsersState({ loading: false, error: msg });
+    }
+  }, []);
+
+  const loadCronLogs = useCallback(async () => {
+    setCronState({ loading: true, error: null });
+    try {
+      const data = await apiFetch<{ logs: any[] }>('/api/admin/cron-logs');
+      setCronLogs(data.logs || []);
+      setCronState({ loading: false, error: null });
+    } catch (err) {
+      const msg = (err as Error).message || 'Failed to load cron logs';
+      console.error('[AdminPanel] cron-logs error:', msg);
+      setCronState({ loading: false, error: msg });
+    }
+  }, []);
+
+  const loadAll = useCallback(() => {
+    loadMetrics();
+    loadActivity();
+    loadWithdrawals();
+    loadUsers();
+    loadCronLogs();
+  }, [loadMetrics, loadActivity, loadWithdrawals, loadUsers, loadCronLogs]);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
   const approveWithdrawal = async (id: number) => {
-    await apiFetch(`/api/admin/withdrawals/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
-    await reloadAdmin();
+    try {
+      await apiFetch(`/api/admin/withdrawals/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
+      await loadWithdrawals();
+    } catch (err) {
+      alert((err as Error).message || 'Failed to approve withdrawal.');
+    }
   };
 
   const failWithdrawal = async (id: number) => {
     const reason = window.prompt('Reason for rejecting this withdrawal:', 'Rejected by admin');
     if (!reason) return;
-    await apiFetch(`/api/admin/withdrawals/${id}/fail`, { method: 'POST', body: JSON.stringify({ reason }) });
-    await reloadAdmin();
+    try {
+      await apiFetch(`/api/admin/withdrawals/${id}/fail`, { method: 'POST', body: JSON.stringify({ reason }) });
+      await loadWithdrawals();
+    } catch (err) {
+      alert((err as Error).message || 'Failed to reject withdrawal.');
+    }
   };
 
   const adjustUserBalance = async (targetUser: any) => {
@@ -99,7 +163,7 @@ export const AdminPanel = () => {
         method: 'POST',
         body: JSON.stringify({ mode, amount, reason }),
       });
-      await reloadAdmin();
+      await loadUsers();
       alert('Balance adjustment saved and audited.');
     } catch (error) {
       alert((error as Error).message || 'Balance adjustment failed.');
@@ -125,12 +189,15 @@ export const AdminPanel = () => {
         method: 'POST',
         body: JSON.stringify({ mode, amount, reason }),
       });
-      await reloadAdmin();
+      await loadUsers();
       alert('Your balance has been adjusted and audited.');
     } catch (error) {
       alert((error as Error).message || 'Balance adjustment failed.');
     }
   };
+
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+  const usersColSpan = isSuperAdmin ? 7 : 6;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -146,126 +213,360 @@ export const AdminPanel = () => {
               <span className="text-[10px] text-slate-500 uppercase tracking-widest font-black">System Architect Mode</span>
             </div>
           </div>
-          <div className="flex gap-2 bg-slate-950 p-1 rounded-xl border border-white/5">
-            {[
-              { id: 'health', icon: Activity, label: 'Health' },
-              { id: 'payouts', icon: ArrowUpCircle, label: 'Payouts' },
-              { id: 'cron', icon: Terminal, label: 'Cron Logs' },
-              { id: 'activity', icon: Activity, label: 'Activity' },
-              { id: 'users', icon: Users, label: 'Users' },
-              ...(currentUser?.role === 'super_admin' ? [{ id: 'my-account', icon: UserCog, label: 'My Account' }] : []),
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveAdminTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                  activeAdminTab === tab.id ? "bg-white text-slate-950" : "text-slate-400 hover:text-white"
-                )}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={loadAll}
+              title="Reload all data"
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors border border-white/5"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+            <div className="flex gap-2 bg-slate-950 p-1 rounded-xl border border-white/5">
+              {[
+                { id: 'users', icon: Users, label: 'Users' },
+                { id: 'payouts', icon: ArrowUpCircle, label: 'Payouts' },
+                { id: 'health', icon: Activity, label: 'Health' },
+                { id: 'activity', icon: Activity, label: 'Activity' },
+                { id: 'cron', icon: Terminal, label: 'Cron Logs' },
+                ...(isSuperAdmin ? [{ id: 'my-account', icon: UserCog, label: 'My Account' }] : []),
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveAdminTab(tab.id)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all',
+                    activeAdminTab === tab.id ? 'bg-white text-slate-950' : 'text-slate-400 hover:text-white'
+                  )}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
       <main className="max-w-7xl mx-auto p-6">
-        {activeAdminTab === 'health' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
-              <div className="flex justify-between items-center mb-6">
-                <Database className="text-blue-500" />
-                <span className="text-emerald-500 text-xs font-black uppercase">Online</span>
+
+        {/* ── USERS TAB ── */}
+        {activeAdminTab === 'users' && (
+          <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
+            <div className="p-6 border-b border-white/5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-lg">Registered Users</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Balances, deposits, investments, and last login for all accounts.
+                </p>
               </div>
-              <p className="text-slate-500 text-xs font-bold uppercase mb-1">Database Cluster</p>
-              <h3 className="text-2xl font-bold">MySQL 8.0 Enterprise</h3>
-              <p className="text-slate-500 text-xs mt-4">Users: {metrics?.totalUsers ?? 0} | Active investments: {metrics?.activeInvestments ?? 0}</p>
-            </div>
-            
-            <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
-              <div className="flex justify-between items-center mb-6">
-                <Activity className="text-emerald-500" />
-                <span className="text-emerald-500 text-xs font-black uppercase">Active</span>
-              </div>
-              <p className="text-slate-500 text-xs font-bold uppercase mb-1">Paystack Gateway</p>
-              <h3 className="text-2xl font-bold">{metrics?.successfulPayments24h ?? 0} paid today</h3>
-              <p className="text-slate-500 text-xs mt-4">Attempts 24h: {metrics?.paymentAttempts24h ?? 0} | Paid in: {formatKSH(metrics?.paidIn ?? 0)}</p>
+              <button
+                onClick={loadUsers}
+                className="flex items-center gap-2 text-xs bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg border border-white/10 transition-colors"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Refresh
+              </button>
             </div>
 
-            <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
-              <div className="flex justify-between items-center mb-6">
-                <Users className="text-violet-500" />
+            {usersState.loading && (
+              <div className="flex items-center justify-center gap-3 py-16 text-slate-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading users…</span>
               </div>
-              <p className="text-slate-500 text-xs font-bold uppercase mb-1">Active Sessions</p>
-              <h3 className="text-2xl font-bold">{metrics?.activeUsers24h ?? 0} Users</h3>
-              <p className="text-slate-500 text-xs mt-4">Logins 24h: {metrics?.logins24h ?? 0} | New users: {metrics?.newUsers24h ?? 0}</p>
-            </div>
+            )}
 
-            <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl md:col-span-3">
-              <p className="text-slate-500 text-xs font-bold uppercase mb-4">Financial Overview</p>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div><p className="text-slate-500 text-xs">Total invested</p><h3 className="text-xl font-black">{formatKSH(metrics?.totalInvested ?? 0)}</h3></div>
-                <div><p className="text-slate-500 text-xs">Balances owed</p><h3 className="text-xl font-black">{formatKSH(metrics?.totalBalances ?? 0)}</h3></div>
-                <div><p className="text-slate-500 text-xs">Referral earnings</p><h3 className="text-xl font-black">{formatKSH(metrics?.totalReferralEarnings ?? 0)}</h3></div>
-                <div><p className="text-slate-500 text-xs">Pending withdrawals</p><h3 className="text-xl font-black">{metrics?.pendingWithdrawals ?? 0}</h3></div>
+            {!usersState.loading && usersState.error && (
+              <div className="flex items-center gap-3 m-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold">Failed to load users</p>
+                  <p className="text-xs mt-0.5 opacity-80">{usersState.error}</p>
+                </div>
+                <button
+                  onClick={loadUsers}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 transition-colors font-bold"
+                >
+                  Retry
+                </button>
               </div>
-            </div>
+            )}
+
+            {!usersState.loading && !usersState.error && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-950/50 text-slate-500 text-[10px] uppercase tracking-widest">
+                    <tr>
+                      <th className="px-6 py-4">User</th>
+                      <th className="px-6 py-4">Role</th>
+                      <th className="px-6 py-4">Balance</th>
+                      <th className="px-6 py-4">Invested</th>
+                      <th className="px-6 py-4">Deposits</th>
+                      <th className="px-6 py-4">Last Login</th>
+                      {isSuperAdmin && <th className="px-6 py-4 text-right">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {usersData.map((user) => (
+                      <tr key={user.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4">
+                          <p className="font-bold">{user.name}</p>
+                          <p className="text-xs text-slate-400">{user.email}</p>
+                          <p className="text-[10px] text-slate-600 font-mono mt-0.5">REF: {user.referralCode}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={cn(
+                            'px-2 py-1 rounded text-[10px] font-black uppercase',
+                            user.role === 'super_admin' && 'bg-violet-500/10 text-violet-400',
+                            user.role === 'admin' && 'bg-blue-500/10 text-blue-400',
+                            user.role === 'user' && 'bg-slate-700/50 text-slate-400',
+                          )}>
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-black text-emerald-400">{formatKSH(user.accountBalance)}</td>
+                        <td className="px-6 py-4 font-bold text-sm">{formatKSH(user.totalInvested)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-300">
+                          {user.completedDepositCount} paid
+                          <span className="text-slate-600"> / </span>
+                          {user.investmentCount} nodes
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-500">
+                          {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
+                        </td>
+                        {isSuperAdmin && (
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => adjustUserBalance(user)}
+                              className="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-black hover:bg-amber-500/20 border border-amber-500/20 transition-colors"
+                            >
+                              Adjust Balance
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {usersData.length === 0 && (
+                      <tr>
+                        <td colSpan={usersColSpan} className="px-6 py-16 text-center text-slate-500">
+                          No registered users found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
+        {/* ── PAYOUTS TAB ── */}
         {activeAdminTab === 'payouts' && (
           <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
             <div className="p-8 border-b border-white/5">
               <h3 className="text-xl font-bold">Pending M-Pesa Disbursements</h3>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-950/50">
-                  <tr className="text-slate-500 text-[10px] uppercase tracking-widest">
-                    <th className="px-8 py-4">User Details</th>
-                    <th className="px-8 py-4">Phone Number</th>
-                    <th className="px-8 py-4">Requested Amount</th>
-                    <th className="px-8 py-4">Ref Status</th>
-                    <th className="px-8 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {withdrawals.map((payout, idx) => (
-                    <tr key={idx} className="hover:bg-white/5 transition-colors">
-                      <td className="px-8 py-6">
-                        <p className="font-bold">{payout.name}</p>
-                        <p className="text-xs text-slate-500">{payout.email}</p>
-                      </td>
-                      <td className="px-8 py-6 font-mono text-sm">{payout.phone_number || 'Not provided'}</td>
-                      <td className="px-8 py-6 font-black text-emerald-500">{formatKSH(payout.amount)}</td>
-                      <td className="px-8 py-6">
-                        <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded uppercase">
-                          {payout.status}
-                        </span>
-                      </td>
-                      <td className="px-8 py-6 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => approveWithdrawal(payout.id)} className="p-2 hover:bg-emerald-500/20 text-emerald-500 rounded-lg transition-colors border border-emerald-500/20">
-                            <CheckCircle className="w-5 h-5" />
-                          </button>
-                          <button onClick={() => failWithdrawal(payout.id)} className="p-2 hover:bg-rose-500/20 text-rose-500 rounded-lg transition-colors border border-rose-500/20">
-                            <XCircle className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
+
+            {withdrawalsState.loading && (
+              <div className="flex items-center justify-center gap-3 py-16 text-slate-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading withdrawals…</span>
+              </div>
+            )}
+
+            {!withdrawalsState.loading && withdrawalsState.error && (
+              <div className="flex items-center gap-3 m-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold">Failed to load withdrawals</p>
+                  <p className="text-xs mt-0.5 opacity-80">{withdrawalsState.error}</p>
+                </div>
+                <button onClick={loadWithdrawals} className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 transition-colors font-bold">Retry</button>
+              </div>
+            )}
+
+            {!withdrawalsState.loading && !withdrawalsState.error && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-950/50">
+                    <tr className="text-slate-500 text-[10px] uppercase tracking-widest">
+                      <th className="px-8 py-4">User Details</th>
+                      <th className="px-8 py-4">Phone Number</th>
+                      <th className="px-8 py-4">Requested Amount</th>
+                      <th className="px-8 py-4">Status</th>
+                      <th className="px-8 py-4 text-right">Actions</th>
                     </tr>
-                  ))}
-                  {withdrawals.length === 0 && (
-                    <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-500">No pending payout records yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {withdrawals.map((payout, idx) => (
+                      <tr key={idx} className="hover:bg-white/5 transition-colors">
+                        <td className="px-8 py-6">
+                          <p className="font-bold">{payout.name}</p>
+                          <p className="text-xs text-slate-500">{payout.email}</p>
+                        </td>
+                        <td className="px-8 py-6 font-mono text-sm">{payout.phone_number || 'Not provided'}</td>
+                        <td className="px-8 py-6 font-black text-emerald-500">{formatKSH(payout.amount)}</td>
+                        <td className="px-8 py-6">
+                          <span className="px-2 py-1 bg-amber-500/10 text-amber-400 text-[10px] font-black rounded uppercase">
+                            {payout.status}
+                          </span>
+                        </td>
+                        <td className="px-8 py-6 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => approveWithdrawal(payout.id)} className="p-2 hover:bg-emerald-500/20 text-emerald-500 rounded-lg transition-colors border border-emerald-500/20">
+                              <CheckCircle className="w-5 h-5" />
+                            </button>
+                            <button onClick={() => failWithdrawal(payout.id)} className="p-2 hover:bg-rose-500/20 text-rose-500 rounded-lg transition-colors border border-rose-500/20">
+                              <XCircle className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {withdrawals.length === 0 && (
+                      <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-500">No pending payout records.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
+        {/* ── HEALTH TAB ── */}
+        {activeAdminTab === 'health' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {metricsState.loading && (
+              <div className="md:col-span-3 flex items-center justify-center gap-3 py-16 text-slate-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading metrics…</span>
+              </div>
+            )}
+
+            {!metricsState.loading && metricsState.error && (
+              <div className="md:col-span-3 flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold">Failed to load metrics</p>
+                  <p className="text-xs mt-0.5 opacity-80">{metricsState.error}</p>
+                </div>
+                <button onClick={loadMetrics} className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 transition-colors font-bold">Retry</button>
+              </div>
+            )}
+
+            {!metricsState.loading && !metricsState.error && (
+              <>
+                <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
+                  <div className="flex justify-between items-center mb-6">
+                    <Database className="text-blue-500" />
+                    <span className="text-emerald-500 text-xs font-black uppercase">Online</span>
+                  </div>
+                  <p className="text-slate-500 text-xs font-bold uppercase mb-1">Database Cluster</p>
+                  <h3 className="text-2xl font-bold">MySQL 8.0 Enterprise</h3>
+                  <p className="text-slate-500 text-xs mt-4">Users: {metrics?.totalUsers ?? 0} | Active investments: {metrics?.activeInvestments ?? 0}</p>
+                </div>
+
+                <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
+                  <div className="flex justify-between items-center mb-6">
+                    <Activity className="text-emerald-500" />
+                    <span className="text-emerald-500 text-xs font-black uppercase">Active</span>
+                  </div>
+                  <p className="text-slate-500 text-xs font-bold uppercase mb-1">Paystack Gateway</p>
+                  <h3 className="text-2xl font-bold">{metrics?.successfulPayments24h ?? 0} paid today</h3>
+                  <p className="text-slate-500 text-xs mt-4">Attempts 24h: {metrics?.paymentAttempts24h ?? 0} | Paid in: {formatKSH(metrics?.paidIn ?? 0)}</p>
+                </div>
+
+                <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
+                  <div className="flex justify-between items-center mb-6">
+                    <Users className="text-violet-500" />
+                  </div>
+                  <p className="text-slate-500 text-xs font-bold uppercase mb-1">Active Sessions</p>
+                  <h3 className="text-2xl font-bold">{metrics?.activeUsers24h ?? 0} Users</h3>
+                  <p className="text-slate-500 text-xs mt-4">Logins 24h: {metrics?.logins24h ?? 0} | New users: {metrics?.newUsers24h ?? 0}</p>
+                </div>
+
+                <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl md:col-span-3">
+                  <p className="text-slate-500 text-xs font-bold uppercase mb-4">Financial Overview</p>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div><p className="text-slate-500 text-xs">Total invested</p><h3 className="text-xl font-black">{formatKSH(metrics?.totalInvested ?? 0)}</h3></div>
+                    <div><p className="text-slate-500 text-xs">Balances owed</p><h3 className="text-xl font-black">{formatKSH(metrics?.totalBalances ?? 0)}</h3></div>
+                    <div><p className="text-slate-500 text-xs">Referral earnings</p><h3 className="text-xl font-black">{formatKSH(metrics?.totalReferralEarnings ?? 0)}</h3></div>
+                    <div><p className="text-slate-500 text-xs">Pending withdrawals</p><h3 className="text-xl font-black">{metrics?.pendingWithdrawals ?? 0}</h3></div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── ACTIVITY TAB ── */}
+        {activeAdminTab === 'activity' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {activityState.loading && (
+              <div className="lg:col-span-2 flex items-center justify-center gap-3 py-16 text-slate-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading activity…</span>
+              </div>
+            )}
+
+            {!activityState.loading && activityState.error && (
+              <div className="lg:col-span-2 flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold">Failed to load activity</p>
+                  <p className="text-xs mt-0.5 opacity-80">{activityState.error}</p>
+                </div>
+                <button onClick={loadActivity} className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 transition-colors font-bold">Retry</button>
+              </div>
+            )}
+
+            {!activityState.loading && !activityState.error && (
+              <>
+                <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
+                  <div className="p-6 border-b border-white/5">
+                    <h3 className="font-bold">Login and System Activity</h3>
+                    <p className="text-xs text-slate-500">Recent auth, gateway, withdrawal, and admin events.</p>
+                  </div>
+                  <div className="divide-y divide-white/5 max-h-[560px] overflow-auto">
+                    {activity.map((log) => (
+                      <div key={log.id} className="p-4 flex justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-bold">{log.action}</p>
+                          <p className="text-xs text-slate-500">{log.email || 'System'} | {log.ip_address || 'No IP'}</p>
+                        </div>
+                        <p className="text-xs text-slate-500 whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</p>
+                      </div>
+                    ))}
+                    {activity.length === 0 && <div className="p-8 text-center text-slate-500">No activity logs yet.</div>}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
+                  <div className="p-6 border-b border-white/5">
+                    <h3 className="font-bold">Payment Ledger</h3>
+                    <p className="text-xs text-slate-500">Deposits, withdrawals, and referral commission records.</p>
+                  </div>
+                  <div className="divide-y divide-white/5 max-h-[560px] overflow-auto">
+                    {payments.map((payment) => (
+                      <div key={payment.id} className="p-4 flex justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-bold">{payment.type} | {payment.status}</p>
+                          <p className="text-xs text-slate-500">{payment.email} | {payment.reference || payment.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-emerald-500">{formatKSH(payment.amount)}</p>
+                          <p className="text-xs text-slate-500">{new Date(payment.created_at).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {payments.length === 0 && <div className="p-8 text-center text-slate-500">No payment records yet.</div>}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── CRON LOGS TAB ── */}
         {activeAdminTab === 'cron' && (
           <div className="bg-slate-900 border border-white/5 rounded-[2rem] p-8">
             <div className="flex items-center justify-between mb-8">
@@ -277,116 +578,41 @@ export const AdminPanel = () => {
                 Force Trigger UTC Midnight
               </button>
             </div>
-            <div className="space-y-4 font-mono text-xs">
-              {cronLogs.map((log) => (
-                <div key={log.id} className="flex gap-4 p-3 bg-slate-950/50 rounded-lg border border-white/5">
-                  <span className="text-slate-500">[{new Date(log.createdAt).toLocaleString()}]</span>
-                  <span className="text-emerald-500">RUN {log.runDate}: {log.investmentCount} investments credited {formatKSH(log.totalCredited)}</span>
+
+            {cronState.loading && (
+              <div className="flex items-center justify-center gap-3 py-10 text-slate-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading cron logs…</span>
+              </div>
+            )}
+
+            {!cronState.loading && cronState.error && (
+              <div className="flex items-center gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold">Failed to load cron logs</p>
+                  <p className="text-xs mt-0.5 opacity-80">{cronState.error}</p>
                 </div>
-              ))}
-              {cronLogs.length === 0 && <div className="p-8 text-center text-slate-500">No cron runs recorded yet.</div>}
-            </div>
-          </div>
-        )}
-
-        {activeAdminTab === 'activity' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
-              <div className="p-6 border-b border-white/5">
-                <h3 className="font-bold">Login and System Activity</h3>
-                <p className="text-xs text-slate-500">Recent auth, gateway, withdrawal, and admin events.</p>
+                <button onClick={loadCronLogs} className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 transition-colors font-bold">Retry</button>
               </div>
-              <div className="divide-y divide-white/5 max-h-[560px] overflow-auto">
-                {activity.map((log) => (
-                  <div key={log.id} className="p-4 flex justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-bold">{log.action}</p>
-                      <p className="text-xs text-slate-500">{log.email || 'System'} | {log.ip_address || 'No IP'}</p>
-                    </div>
-                    <p className="text-xs text-slate-500 whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</p>
+            )}
+
+            {!cronState.loading && !cronState.error && (
+              <div className="space-y-4 font-mono text-xs">
+                {cronLogs.map((log) => (
+                  <div key={log.id} className="flex gap-4 p-3 bg-slate-950/50 rounded-lg border border-white/5">
+                    <span className="text-slate-500">[{new Date(log.createdAt).toLocaleString()}]</span>
+                    <span className="text-emerald-500">RUN {log.runDate}: {log.investmentCount} investments credited {formatKSH(log.totalCredited)}</span>
                   </div>
                 ))}
-                {activity.length === 0 && <div className="p-8 text-center text-slate-500">No activity logs yet.</div>}
+                {cronLogs.length === 0 && <div className="p-8 text-center text-slate-500">No cron runs recorded yet.</div>}
               </div>
-            </div>
-
-            <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
-              <div className="p-6 border-b border-white/5">
-                <h3 className="font-bold">Payment Ledger</h3>
-                <p className="text-xs text-slate-500">Deposits, withdrawals, and referral commission records.</p>
-              </div>
-              <div className="divide-y divide-white/5 max-h-[560px] overflow-auto">
-                {payments.map((payment) => (
-                  <div key={payment.id} className="p-4 flex justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-bold">{payment.type} | {payment.status}</p>
-                      <p className="text-xs text-slate-500">{payment.email} | {payment.reference || payment.description}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-emerald-500">{formatKSH(payment.amount)}</p>
-                      <p className="text-xs text-slate-500">{new Date(payment.created_at).toLocaleString()}</p>
-                    </div>
-                  </div>
-                ))}
-                {payments.length === 0 && <div className="p-8 text-center text-slate-500">No payment records yet.</div>}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
-        {activeAdminTab === 'users' && (
-          <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
-            <div className="p-6 border-b border-white/5">
-              <h3 className="font-bold">Registered Users</h3>
-              <p className="text-xs text-slate-500">Users, balances, deposits, investments, and last login records.</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-950/50 text-slate-500 text-[10px] uppercase tracking-widest">
-                  <tr>
-                    <th className="px-6 py-4">User</th>
-                    <th className="px-6 py-4">Role</th>
-                    <th className="px-6 py-4">Balance</th>
-                    <th className="px-6 py-4">Invested</th>
-                    <th className="px-6 py-4">Deposits</th>
-                    <th className="px-6 py-4">Last Login</th>
-                    {currentUser?.role === 'super_admin' && <th className="px-6 py-4 text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {usersData.map((user) => (
-                    <tr key={user.id} className="hover:bg-white/5">
-                      <td className="px-6 py-4">
-                        <p className="font-bold">{user.name}</p>
-                        <p className="text-xs text-slate-500">{user.email}</p>
-                        <p className="text-[10px] text-slate-600 font-mono">REF: {user.referralCode}</p>
-                      </td>
-                      <td className="px-6 py-4 capitalize text-sm">{user.role}</td>
-                      <td className="px-6 py-4 font-black text-emerald-500">{formatKSH(user.accountBalance)}</td>
-                      <td className="px-6 py-4 font-bold">{formatKSH(user.totalInvested)}</td>
-                      <td className="px-6 py-4 text-sm">{user.completedDepositCount} paid / {user.investmentCount} nodes</td>
-                      <td className="px-6 py-4 text-xs text-slate-500">
-                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
-                      </td>
-                      {currentUser?.role === 'super_admin' && (
-                        <td className="px-6 py-4 text-right">
-                          <button onClick={() => adjustUserBalance(user)} className="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-black hover:bg-amber-500/20">
-                            Adjust Balance
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                  {usersData.length === 0 && (
-                    <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500">No registered users yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {activeAdminTab === 'my-account' && currentUser?.role === 'super_admin' && (
+        {/* ── MY ACCOUNT TAB (super_admin only) ── */}
+        {activeAdminTab === 'my-account' && isSuperAdmin && (
           <div className="bg-slate-900 border border-white/5 rounded-[2rem] p-8 max-w-xl">
             <div className="flex items-center gap-4 mb-8">
               <div className="bg-violet-500/20 p-3 rounded-xl">
