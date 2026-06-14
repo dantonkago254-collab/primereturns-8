@@ -1435,9 +1435,161 @@ app.post('/api/super-admin/users/:id/balance', auth, superAdminOnly, asyncRoute(
   }
 }));
 
+app.post('/api/super-admin/me/balance', auth, superAdminOnly, asyncRoute(async (req, res) => {
+  const mode = String(req.body.mode || '').trim().toLowerCase();
+  const reason = String(req.body.reason || '').trim().slice(0, 500);
+  const amountCents = toCents(req.body.amount);
+
+  if (!['set', 'add', 'subtract'].includes(mode)) {
+    throw Object.assign(new Error('Balance adjustment mode must be set, add, or subtract.'), { status: 400 });
+  }
+
+  if (mode !== 'set' && amountCents <= 0) {
+    throw Object.assign(new Error('Adjustment amount must be greater than zero.'), { status: 400 });
+  }
+
+  if (reason.length < 5) {
+    throw Object.assign(new Error('A clear reason is required for manual balance adjustments.'), { status: 400 });
+  }
+
+  const conn = await requireDb().getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[targetUser]] = await conn.query('SELECT * FROM users WHERE id = ? FOR UPDATE', [req.user.id]);
+    if (!targetUser) throw Object.assign(new Error('User not found.'), { status: 404 });
+
+    const currentBalance = Number(targetUser.account_balance_cents);
+    let nextBalance = currentBalance;
+
+    if (mode === 'set') nextBalance = amountCents;
+    if (mode === 'add') nextBalance = currentBalance + amountCents;
+    if (mode === 'subtract') nextBalance = currentBalance - amountCents;
+
+    if (nextBalance < 0) {
+      throw Object.assign(new Error('Adjustment would make the account balance negative.'), { status: 400 });
+    }
+
+    const delta = nextBalance - currentBalance;
+    await conn.query('UPDATE users SET account_balance_cents = ? WHERE id = ?', [nextBalance, req.user.id]);
+    await conn.query(
+      'INSERT INTO transactions (user_id, type, amount_cents, status, description) VALUES (?, ?, ?, ?, ?)',
+      [
+        req.user.id,
+        'balance_adjustment',
+        Math.abs(delta),
+        'completed',
+        `Super admin self ${mode} balance adjustment. Previous: KSh ${fromCents(currentBalance)}. New: KSh ${fromCents(nextBalance)}. Delta: KSh ${fromCents(delta)}. Reason: ${reason}`,
+      ]
+    );
+
+    await conn.commit();
+
+    await logAudit(req.user.id, 'super_admin.self_balance_adjustment', {
+      mode,
+      amount: fromCents(amountCents),
+      previousBalance: fromCents(currentBalance),
+      newBalance: fromCents(nextBalance),
+      delta: fromCents(delta),
+      reason,
+    }, req);
+
+    const [[updatedUser]] = await requireDb().query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    res.json({ ok: true, user: apiUser(updatedUser) });
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}));
+
+async function creditDailyReturns() {
+  if (!pool) return;
+  const runDate = new Date().toISOString().slice(0, 10);
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [existing] = await conn.query('SELECT id FROM cron_logs WHERE run_date = ? FOR UPDATE', [runDate]);
+    if (existing.length) {
+      await conn.commit();
+      console.log(`[Daily Returns] Already ran for ${runDate}, skipping.`);
+      return;
+    }
+
+    let total = 0;
+    let investmentCount = 0;
+    let lastId = 0;
+
+    while (true) {
+      const [investments] = await conn.query(
+        'SELECT * FROM investments WHERE status = ? AND id > ? ORDER BY id ASC LIMIT ? FOR UPDATE',
+        ['active', lastId, CRON_BATCH_SIZE]
+      );
+
+      if (!investments.length) break;
+
+      for (const investment of investments) {
+        lastId = investment.id;
+        total += Number(investment.daily_return_cents);
+        investmentCount += 1;
+        const nextDays = Math.max(0, investment.days_remaining - 1);
+        await conn.query(
+          'UPDATE users SET account_balance_cents = account_balance_cents + ?, total_earned_cents = total_earned_cents + ? WHERE id = ?',
+          [investment.daily_return_cents, investment.daily_return_cents, investment.user_id]
+        );
+        await conn.query(
+          'INSERT INTO transactions (user_id, type, amount_cents, status, description) VALUES (?, ?, ?, ?, ?)',
+          [investment.user_id, 'daily_return', investment.daily_return_cents, 'completed', `Daily return from ${investment.plan_name}`]
+        );
+        if (nextDays === 0) {
+          await conn.query(
+            'UPDATE investments SET days_remaining = 0, status = ?, end_date = NOW() WHERE id = ?',
+            ['completed', investment.id]
+          );
+        } else {
+          await conn.query(
+            'UPDATE investments SET days_remaining = ? WHERE id = ?',
+            [nextDays, investment.id]
+          );
+        }
+      }
+    }
+
+    await conn.query(
+      'INSERT INTO cron_logs (run_date, investment_count, total_credited_cents) VALUES (?, ?, ?)',
+      [runDate, investmentCount, total]
+    );
+    await conn.commit();
+    console.log(`[Daily Returns] Credited ${investmentCount} investments, total KSh ${fromCents(total)}`);
+  } catch (error) {
+    await conn.rollback();
+    console.error('[Daily Returns] Cron job failed:', error.message);
+  } finally {
+    conn.release();
+  }
+}
+
+function scheduleDailyReturns() {
+  const MS_PER_MINUTE = 60_000;
+  let lastCheckedMinute = -1;
+
+  setInterval(() => {
+    const now = new Date();
+    const currentMinute = now.getUTCHours() * 60 + now.getUTCMinutes();
+    // Fire once at UTC midnight (00:00)
+    if (currentMinute === 0 && lastCheckedMinute !== 0) {
+      lastCheckedMinute = 0;
+      creditDailyReturns().catch((error) => console.error('[Daily Returns] Unhandled error:', error.message));
+    } else if (currentMinute !== 0) {
+      lastCheckedMinute = currentMinute;
+    }
+  }, MS_PER_MINUTE);
+}
+
+
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR, { maxAge: '7d', index: false, extensions: ['html'] }));
-  app.get(/^\/(?!api).*/, (_req, res) => fs.existsSync(INDEX_HTML) ? res.sendFile(INDEX_HTML) : res.status(500).send('Frontend not built.'));
+  app.get(/^\\/(?!api).*/, (_req, res) => fs.existsSync(INDEX_HTML) ? res.sendFile(INDEX_HTML) : res.status(500).send('Frontend not built.'));
 }
 
 app.use((error, _req, res, _next) => {
@@ -1446,7 +1598,10 @@ app.use((error, _req, res, _next) => {
 });
 
 initDb()
-  .then(() => http.createServer(app).listen(PORT, () => console.log(`[PrimeReturns] listening on :${PORT}`)))
+  .then(() => {
+    http.createServer(app).listen(PORT, () => console.log(`[PrimeReturns] listening on :${PORT}`));
+    scheduleDailyReturns();
+  })
   .catch((error) => {
     console.error('[PrimeReturns] failed to start:', error);
     process.exit(1);
