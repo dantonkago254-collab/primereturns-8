@@ -1640,7 +1640,7 @@ function scheduleDailyReturns() {
 
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR, { maxAge: '7d', index: false, extensions: ['html'] }));
-  app.get(/^\\/(?!api).*/, (_req, res) => fs.existsSync(INDEX_HTML) ? res.sendFile(INDEX_HTML) : res.status(500).send('Frontend not built.'));
+  app.get(/^\/(?!api).*/, (_req, res) => fs.existsSync(INDEX_HTML) ? res.sendFile(INDEX_HTML) : res.status(500).send('Frontend not built.'));
 }
 
 app.use((error, _req, res, _next) => {
