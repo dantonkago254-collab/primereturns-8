@@ -59,7 +59,7 @@ app.use(helmet({
       "script-src": ["'self'", "'unsafe-inline'"],
       "style-src": ["'self'", "'unsafe-inline'"],
       "img-src": ["'self'", 'data:', 'https:'],
-      "connect-src": ["'self'", 'https://api.paystack.co'],
+      "connect-src": ["'self'", 'https://api.paystack.co', 'https://prime-returns-ai-production.up.railway.app'],
       "frame-src": ["'none'"],
       "frame-ancestors": ["'none'"],
     },
