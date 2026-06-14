@@ -167,7 +167,7 @@ export const AIAssistant = ({ pageContext = 'general' }: AIAssistantProps) => {
 
       const data = await response.json();
       const replyText: string =
-        data.reply || data.message || data.response || data.text ||
+        data.message || data.reply || data.response || data.text ||
         'I\'m having trouble connecting right now. Please try again in a moment!';
 
       const assistantMsg: Message = {
@@ -181,7 +181,7 @@ export const AIAssistant = ({ pageContext = 'general' }: AIAssistantProps) => {
       const errorMsg: Message = {
         id: generateId(),
         role: 'assistant',
-        text: '⚠️ I couldn\'t reach the AI service right now. Please check your connection and try again. In the meantime, feel free to explore the platform — your money is still growing! 💰',
+        text: 'I apologize for the technical difficulty. Please try your question again.',
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMsg]);
