@@ -7,7 +7,9 @@ import {
   CheckCircle,
   XCircle,
   Terminal,
-  UserCog
+  UserCog,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatKSH, cn } from '../lib/utils';
@@ -23,49 +25,77 @@ export const AdminPanel = () => {
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
   const [usersData, setUsersData] = useState<any[]>([]);
   const [cronLogs, setCronLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
 
-  const applyAdminData = (
-    metricsRes: PromiseSettledResult<{ metrics: any }>,
-    activityRes: PromiseSettledResult<{ logs: any[]; payments: any[] }>,
-    withdrawalRes: PromiseSettledResult<{ withdrawals: any[] }>,
-    usersRes: PromiseSettledResult<{ users: any[] }>,
-    cronRes: PromiseSettledResult<{ logs: any[] }>,
-  ) => {
-    if (metricsRes.status === 'fulfilled') setMetrics(metricsRes.value.metrics);
-    if (activityRes.status === 'fulfilled') {
-      setActivity(activityRes.value.logs || []);
-      setPayments(activityRes.value.payments || []);
+  const loadAdmin = async () => {
+    setLoading(true);
+    const errors: Record<string, string> = {};
+
+    console.log('[AdminPanel] Starting data load...');
+
+    try {
+      const metricsRes = await apiFetch<{ metrics: any }>('/api/admin/metrics');
+      console.log('[AdminPanel] /api/admin/metrics OK', metricsRes);
+      setMetrics(metricsRes.metrics ?? null);
+    } catch (err) {
+      const msg = (err as Error).message || 'Unknown error';
+      console.error('[AdminPanel] /api/admin/metrics FAILED:', msg);
+      errors.metrics = msg;
     }
-    if (withdrawalRes.status === 'fulfilled') setWithdrawals(withdrawalRes.value.withdrawals || []);
-    if (usersRes.status === 'fulfilled') setUsersData(usersRes.value.users || []);
-    else console.error('Failed to load users:', usersRes.status === 'rejected' ? usersRes.reason : 'unknown');
-    if (cronRes.status === 'fulfilled') setCronLogs(cronRes.value.logs || []);
+
+    try {
+      const activityRes = await apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity');
+      console.log('[AdminPanel] /api/admin/activity OK', activityRes);
+      setActivity(activityRes.logs ?? []);
+      setPayments(activityRes.payments ?? []);
+    } catch (err) {
+      const msg = (err as Error).message || 'Unknown error';
+      console.error('[AdminPanel] /api/admin/activity FAILED:', msg);
+      errors.activity = msg;
+    }
+
+    try {
+      const withdrawalRes = await apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals');
+      console.log('[AdminPanel] /api/admin/withdrawals OK', withdrawalRes);
+      setWithdrawals(withdrawalRes.withdrawals ?? []);
+    } catch (err) {
+      const msg = (err as Error).message || 'Unknown error';
+      console.error('[AdminPanel] /api/admin/withdrawals FAILED:', msg);
+      errors.withdrawals = msg;
+    }
+
+    try {
+      const usersRes = await apiFetch<{ users: any[] }>('/api/admin/users');
+      console.log('[AdminPanel] /api/admin/users OK — count:', usersRes.users?.length ?? 0, usersRes);
+      setUsersData(usersRes.users ?? []);
+    } catch (err) {
+      const msg = (err as Error).message || 'Unknown error';
+      console.error('[AdminPanel] /api/admin/users FAILED:', msg);
+      errors.users = msg;
+    }
+
+    try {
+      const cronRes = await apiFetch<{ logs: any[] }>('/api/admin/cron-logs');
+      console.log('[AdminPanel] /api/admin/cron-logs OK', cronRes);
+      setCronLogs(cronRes.logs ?? []);
+    } catch (err) {
+      const msg = (err as Error).message || 'Unknown error';
+      console.error('[AdminPanel] /api/admin/cron-logs FAILED:', msg);
+      errors.cronLogs = msg;
+    }
+
+    console.log('[AdminPanel] Data load complete. Errors:', errors);
+    setLoadErrors(errors);
+    setLoading(false);
   };
 
   useEffect(() => {
-    const loadAdmin = async () => {
-      const [metricsRes, activityRes, withdrawalRes, usersRes, cronRes] = await Promise.allSettled([
-        apiFetch<{ metrics: any }>('/api/admin/metrics'),
-        apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity'),
-        apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals'),
-        apiFetch<{ users: any[] }>('/api/admin/users'),
-        apiFetch<{ logs: any[] }>('/api/admin/cron-logs'),
-      ]);
-      applyAdminData(metricsRes, activityRes, withdrawalRes, usersRes, cronRes);
-    };
-
     loadAdmin();
   }, []);
 
   const reloadAdmin = async () => {
-    const [metricsRes, activityRes, withdrawalRes, usersRes, cronRes] = await Promise.allSettled([
-      apiFetch<{ metrics: any }>('/api/admin/metrics'),
-      apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity'),
-      apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals'),
-      apiFetch<{ users: any[] }>('/api/admin/users'),
-      apiFetch<{ logs: any[] }>('/api/admin/cron-logs'),
-    ]);
-    applyAdminData(metricsRes, activityRes, withdrawalRes, usersRes, cronRes);
+    await loadAdmin();
   };
 
   const approveWithdrawal = async (id: number) => {
@@ -146,33 +176,64 @@ export const AdminPanel = () => {
               <span className="text-[10px] text-slate-500 uppercase tracking-widest font-black">System Architect Mode</span>
             </div>
           </div>
-          <div className="flex gap-2 bg-slate-950 p-1 rounded-xl border border-white/5">
-            {[
-              { id: 'health', icon: Activity, label: 'Health' },
-              { id: 'payouts', icon: ArrowUpCircle, label: 'Payouts' },
-              { id: 'cron', icon: Terminal, label: 'Cron Logs' },
-              { id: 'activity', icon: Activity, label: 'Activity' },
-              { id: 'users', icon: Users, label: 'Users' },
-              ...(currentUser?.role === 'super_admin' ? [{ id: 'my-account', icon: UserCog, label: 'My Account' }] : []),
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveAdminTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                  activeAdminTab === tab.id ? "bg-white text-slate-950" : "text-slate-400 hover:text-white"
-                )}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={reloadAdmin}
+              disabled={loading}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
+            <div className="flex gap-2 bg-slate-950 p-1 rounded-xl border border-white/5">
+              {[
+                { id: 'health', icon: Activity, label: 'Health' },
+                { id: 'payouts', icon: ArrowUpCircle, label: 'Payouts' },
+                { id: 'cron', icon: Terminal, label: 'Cron Logs' },
+                { id: 'activity', icon: Activity, label: 'Activity' },
+                { id: 'users', icon: Users, label: 'Users' },
+                ...(currentUser?.role === 'super_admin' ? [{ id: 'my-account', icon: UserCog, label: 'My Account' }] : []),
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveAdminTab(tab.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                    activeAdminTab === tab.id ? "bg-white text-slate-950" : "text-slate-400 hover:text-white"
+                  )}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
       <main className="max-w-7xl mx-auto p-6">
-        {activeAdminTab === 'health' && (
+        {/* Global load-error banner */}
+        {Object.keys(loadErrors).length > 0 && (
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-start gap-3">
+            <AlertTriangle className="text-rose-400 w-5 h-5 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-rose-300 mb-1">Some data failed to load</p>
+              {Object.entries(loadErrors).map(([key, msg]) => (
+                <p key={key} className="text-xs text-rose-400 font-mono">{key}: {msg}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Global loading skeleton */}
+        {loading && (
+          <div className="flex items-center justify-center py-24 gap-3 text-slate-500">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+            <span className="text-sm font-bold">Loading admin data…</span>
+          </div>
+        )}
+
+        {!loading && activeAdminTab === 'health' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
               <div className="flex justify-between items-center mb-6">
@@ -183,7 +244,7 @@ export const AdminPanel = () => {
               <h3 className="text-2xl font-bold">MySQL 8.0 Enterprise</h3>
               <p className="text-slate-500 text-xs mt-4">Users: {metrics?.totalUsers ?? 0} | Active investments: {metrics?.activeInvestments ?? 0}</p>
             </div>
-            
+
             <div className="p-8 bg-slate-900 border border-white/5 rounded-3xl">
               <div className="flex justify-between items-center mb-6">
                 <Activity className="text-emerald-500" />
@@ -215,7 +276,7 @@ export const AdminPanel = () => {
           </div>
         )}
 
-        {activeAdminTab === 'payouts' && (
+        {!loading && activeAdminTab === 'payouts' && (
           <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
             <div className="p-8 border-b border-white/5">
               <h3 className="text-xl font-bold">Pending M-Pesa Disbursements</h3>
@@ -266,7 +327,7 @@ export const AdminPanel = () => {
           </div>
         )}
 
-        {activeAdminTab === 'cron' && (
+        {!loading && activeAdminTab === 'cron' && (
           <div className="bg-slate-900 border border-white/5 rounded-[2rem] p-8">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-xl font-bold flex items-center gap-3">
@@ -289,7 +350,7 @@ export const AdminPanel = () => {
           </div>
         )}
 
-        {activeAdminTab === 'activity' && (
+        {!loading && activeAdminTab === 'activity' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
               <div className="p-6 border-b border-white/5">
@@ -334,11 +395,23 @@ export const AdminPanel = () => {
           </div>
         )}
 
-        {activeAdminTab === 'users' && (
+        {!loading && activeAdminTab === 'users' && (
           <div className="bg-slate-900 border border-white/5 rounded-[2rem] overflow-hidden">
-            <div className="p-6 border-b border-white/5">
-              <h3 className="font-bold">Registered Users</h3>
-              <p className="text-xs text-slate-500">Users, balances, deposits, investments, and last login records.</p>
+            <div className="p-6 border-b border-white/5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold">Registered Users</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {usersData.length > 0
+                    ? `${usersData.length} user${usersData.length !== 1 ? 's' : ''} — balances, deposits, investments, and last login`
+                    : 'Users, balances, deposits, investments, and last login records.'}
+                </p>
+              </div>
+              {loadErrors.users && (
+                <div className="flex items-center gap-2 text-rose-400 text-xs font-bold">
+                  <AlertTriangle className="w-4 h-4" />
+                  Failed to load: {loadErrors.users}
+                </div>
+              )}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -350,35 +423,76 @@ export const AdminPanel = () => {
                     <th className="px-6 py-4">Invested</th>
                     <th className="px-6 py-4">Deposits</th>
                     <th className="px-6 py-4">Last Login</th>
-                    {currentUser?.role === 'super_admin' && <th className="px-6 py-4 text-right">Actions</th>}
+                    {currentUser?.role === 'super_admin' && (
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {usersData.map((user) => (
-                    <tr key={user.id} className="hover:bg-white/5">
-                      <td className="px-6 py-4">
-                        <p className="font-bold">{user.name}</p>
-                        <p className="text-xs text-slate-500">{user.email}</p>
-                        <p className="text-[10px] text-slate-600 font-mono">REF: {user.referralCode}</p>
-                      </td>
-                      <td className="px-6 py-4 capitalize text-sm">{user.role}</td>
-                      <td className="px-6 py-4 font-black text-emerald-500">{formatKSH(user.accountBalance)}</td>
-                      <td className="px-6 py-4 font-bold">{formatKSH(user.totalInvested)}</td>
-                      <td className="px-6 py-4 text-sm">{user.completedDepositCount} paid / {user.investmentCount} nodes</td>
-                      <td className="px-6 py-4 text-xs text-slate-500">
-                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
-                      </td>
-                      {currentUser?.role === 'super_admin' && (
-                        <td className="px-6 py-4 text-right">
-                          <button onClick={() => adjustUserBalance(user)} className="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-black hover:bg-amber-500/20">
-                            Adjust Balance
-                          </button>
+                  {usersData.length > 0 ? (
+                    usersData.map((user) => (
+                      <tr key={user.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4">
+                          <p className="font-bold">{user.name}</p>
+                          <p className="text-xs text-slate-500">{user.email}</p>
+                          <p className="text-[10px] text-slate-600 font-mono">REF: {user.referralCode}</p>
                         </td>
-                      )}
+                        <td className="px-6 py-4">
+                          <span className={cn(
+                            "px-2 py-1 rounded text-[10px] font-black uppercase",
+                            user.role === 'super_admin' && "bg-violet-500/10 text-violet-400",
+                            user.role === 'admin' && "bg-amber-500/10 text-amber-400",
+                            user.role === 'user' && "bg-slate-700/50 text-slate-400",
+                          )}>
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-black text-emerald-500">{formatKSH(user.accountBalance ?? 0)}</td>
+                        <td className="px-6 py-4 font-bold">{formatKSH(user.totalInvested ?? 0)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-300">
+                          {user.completedDepositCount ?? 0} paid / {user.investmentCount ?? 0} nodes
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-500">
+                          {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
+                        </td>
+                        {currentUser?.role === 'super_admin' && (
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => adjustUserBalance(user)}
+                              className="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-black hover:bg-amber-500/20 border border-amber-500/20 transition-colors"
+                            >
+                              Adjust Balance
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={currentUser?.role === 'super_admin' ? 7 : 6}
+                        className="px-6 py-16 text-center"
+                      >
+                        {loadErrors.users ? (
+                          <div className="flex flex-col items-center gap-3 text-rose-400">
+                            <AlertTriangle className="w-8 h-8 opacity-50" />
+                            <p className="font-bold">Failed to load users</p>
+                            <p className="text-xs text-slate-500">{loadErrors.users}</p>
+                            <button
+                              onClick={reloadAdmin}
+                              className="mt-2 px-4 py-2 rounded-lg bg-rose-500/10 text-rose-400 text-xs font-bold hover:bg-rose-500/20 border border-rose-500/20 transition-colors"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2 text-slate-500">
+                            <Users className="w-8 h-8 opacity-30" />
+                            <p className="font-bold">No registered users yet</p>
+                          </div>
+                        )}
+                      </td>
                     </tr>
-                  ))}
-                  {usersData.length === 0 && (
-                    <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500">No registered users yet.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -386,7 +500,7 @@ export const AdminPanel = () => {
           </div>
         )}
 
-        {activeAdminTab === 'my-account' && currentUser?.role === 'super_admin' && (
+        {!loading && activeAdminTab === 'my-account' && currentUser?.role === 'super_admin' && (
           <div className="bg-slate-900 border border-white/5 rounded-[2rem] p-8 max-w-xl">
             <div className="flex items-center gap-4 mb-8">
               <div className="bg-violet-500/20 p-3 rounded-xl">
