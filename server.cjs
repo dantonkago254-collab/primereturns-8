@@ -559,7 +559,29 @@ async function getPlanForAmount(conn, amountCents) {
     'SELECT * FROM investment_plans WHERE is_active = 1 AND ? BETWEEN min_amount_cents AND max_amount_cents ORDER BY min_amount_cents ASC LIMIT 1',
     [amountCents]
   );
-  return rows[0];
+  if (rows[0]) return rows[0];
+
+  // Custom amount: find the matching plan by rate tier and return its real DB row
+  // so the plan_id FK constraint is satisfied.
+  let planName;
+  if (amountCents >= toCents('1000') && amountCents <= toCents('10000')) {
+    planName = 'Starter Node';
+  } else if (amountCents > toCents('10000') && amountCents <= toCents('100000')) {
+    planName = 'Growth Engine';
+  } else if (amountCents > toCents('100000')) {
+    planName = 'Titan Core';
+  } else {
+    return undefined;
+  }
+
+  const [planRows] = await conn.query(
+    'SELECT * FROM investment_plans WHERE is_active = 1 AND name = ? LIMIT 1',
+    [planName]
+  );
+  if (!planRows[0]) return undefined;
+
+  // Override duration to 30 days for all custom amounts
+  return { ...planRows[0], duration_days: 30 };
 }
 
 async function completeVerifiedDeposit(reference, verifiedAmountCents, verifiedUserId = null) {
@@ -981,7 +1003,7 @@ app.post('/api/paystack/initialize', auth, paymentLimiter, asyncRoute(async (req
   const amountCents = toCents(req.body.amount);
   if (amountCents < toCents('1000')) throw Object.assign(new Error('Minimum deposit is KSh 1,000.'), { status: 400 });
   const plan = await getPlanForAmount(requireDb(), amountCents);
-  if (!plan) throw Object.assign(new Error('Deposit amount does not match any active investment plan.'), { status: 400 });
+  if (!plan) throw Object.assign(new Error('Deposit amount must be at least KSh 1,000.'), { status: 400 });
 
   const reference = `PR-${Date.now()}-${req.user.id}-${crypto.randomBytes(6).toString('hex')}`;
   const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
@@ -1070,7 +1092,7 @@ app.post('/api/withdrawals/request', auth, asyncRoute(async (req, res) => {
     const [[lockedUser]] = await conn.query('SELECT * FROM users WHERE id = ? FOR UPDATE', [req.user.id]);
     const balance = Number(lockedUser.account_balance_cents);
 
-    if (balance < toCents('500')) throw Object.assign(new Error('Minimum withdrawal amount is KSh 500.'), { status: 400 });
+    if (balance < toCents('10000')) throw Object.assign(new Error('Minimum withdrawal amount is KSh 10,000.'), { status: 400 });
     if (balance > toCents('500000')) throw Object.assign(new Error('Maximum withdrawal amount is KSh 500,000.'), { status: 400 });
     if (lockedUser.last_withdrawal_at && Date.now() - new Date(lockedUser.last_withdrawal_at).getTime() < 14 * 24 * 60 * 60 * 1000) {
       throw Object.assign(new Error('Withdrawal locked. Please wait 14 days between withdrawals.'), { status: 400 });
