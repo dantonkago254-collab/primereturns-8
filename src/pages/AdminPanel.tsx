@@ -24,40 +24,48 @@ export const AdminPanel = () => {
   const [usersData, setUsersData] = useState<any[]>([]);
   const [cronLogs, setCronLogs] = useState<any[]>([]);
 
+  const applyAdminData = (
+    metricsRes: PromiseSettledResult<{ metrics: any }>,
+    activityRes: PromiseSettledResult<{ logs: any[]; payments: any[] }>,
+    withdrawalRes: PromiseSettledResult<{ withdrawals: any[] }>,
+    usersRes: PromiseSettledResult<{ users: any[] }>,
+    cronRes: PromiseSettledResult<{ logs: any[] }>,
+  ) => {
+    if (metricsRes.status === 'fulfilled') setMetrics(metricsRes.value.metrics);
+    if (activityRes.status === 'fulfilled') {
+      setActivity(activityRes.value.logs || []);
+      setPayments(activityRes.value.payments || []);
+    }
+    if (withdrawalRes.status === 'fulfilled') setWithdrawals(withdrawalRes.value.withdrawals || []);
+    if (usersRes.status === 'fulfilled') setUsersData(usersRes.value.users || []);
+    else console.error('Failed to load users:', usersRes.status === 'rejected' ? usersRes.reason : 'unknown');
+    if (cronRes.status === 'fulfilled') setCronLogs(cronRes.value.logs || []);
+  };
+
   useEffect(() => {
     const loadAdmin = async () => {
-      try {
-        const metricsResponse = await apiFetch<{ metrics: any }>('/api/admin/metrics');
-        const activityResponse = await apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity');
-        const withdrawalResponse = await apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals');
-        const usersResponse = await apiFetch<{ users: any[] }>('/api/admin/users');
-        const cronResponse = await apiFetch<{ logs: any[] }>('/api/admin/cron-logs');
-        setMetrics(metricsResponse.metrics);
-        setActivity(activityResponse.logs || []);
-        setPayments(activityResponse.payments || []);
-        setWithdrawals(withdrawalResponse.withdrawals || []);
-        setUsersData(usersResponse.users || []);
-        setCronLogs(cronResponse.logs || []);
-      } catch (error) {
-        console.error('Admin metrics failed to load:', error);
-      }
+      const [metricsRes, activityRes, withdrawalRes, usersRes, cronRes] = await Promise.allSettled([
+        apiFetch<{ metrics: any }>('/api/admin/metrics'),
+        apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity'),
+        apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals'),
+        apiFetch<{ users: any[] }>('/api/admin/users'),
+        apiFetch<{ logs: any[] }>('/api/admin/cron-logs'),
+      ]);
+      applyAdminData(metricsRes, activityRes, withdrawalRes, usersRes, cronRes);
     };
 
     loadAdmin();
   }, []);
 
   const reloadAdmin = async () => {
-    const metricsResponse = await apiFetch<{ metrics: any }>('/api/admin/metrics');
-    const activityResponse = await apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity');
-    const withdrawalResponse = await apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals');
-    const usersResponse = await apiFetch<{ users: any[] }>('/api/admin/users');
-    const cronResponse = await apiFetch<{ logs: any[] }>('/api/admin/cron-logs');
-    setMetrics(metricsResponse.metrics);
-    setActivity(activityResponse.logs || []);
-    setPayments(activityResponse.payments || []);
-    setWithdrawals(withdrawalResponse.withdrawals || []);
-    setUsersData(usersResponse.users || []);
-    setCronLogs(cronResponse.logs || []);
+    const [metricsRes, activityRes, withdrawalRes, usersRes, cronRes] = await Promise.allSettled([
+      apiFetch<{ metrics: any }>('/api/admin/metrics'),
+      apiFetch<{ logs: any[]; payments: any[] }>('/api/admin/activity'),
+      apiFetch<{ withdrawals: any[] }>('/api/admin/withdrawals'),
+      apiFetch<{ users: any[] }>('/api/admin/users'),
+      apiFetch<{ logs: any[] }>('/api/admin/cron-logs'),
+    ]);
+    applyAdminData(metricsRes, activityRes, withdrawalRes, usersRes, cronRes);
   };
 
   const approveWithdrawal = async (id: number) => {
