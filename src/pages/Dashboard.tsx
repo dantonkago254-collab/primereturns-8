@@ -10,7 +10,8 @@ import {
   PieChart,
   History,
   Share2,
-  Info
+  Info,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { formatKSH, cn } from '../lib/utils';
@@ -172,6 +173,17 @@ export const Dashboard = () => {
             </button>
           ))}
         </nav>
+        {user.role === 'super_admin' && (
+          <div className="px-4 pb-2">
+            <a
+              href="/admin"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-rose-600 text-white font-bold text-sm hover:bg-rose-500 transition-colors shadow-lg shadow-rose-600/20"
+            >
+              <ShieldCheck className="w-5 h-5 shrink-0" />
+              Admin Panel
+            </a>
+          </div>
+        )}
         <div className="p-6 border-t border-slate-100">
           <div className="p-4 bg-slate-900 rounded-2xl text-white">
             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Account Role</p>
@@ -188,6 +200,15 @@ export const Dashboard = () => {
             <p className="text-slate-500 text-sm">Managing your wealth nodes.</p>
           </div>
           <div className="flex gap-4">
+            {user.role === 'super_admin' && (
+              <a
+                href="/admin"
+                className="flex items-center gap-2 bg-rose-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-rose-500 transition-colors shadow-lg shadow-rose-600/20"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                Admin Panel
+              </a>
+            )}
             <button 
               onClick={handlePaystackDeposit}
               disabled={isDepositing}
