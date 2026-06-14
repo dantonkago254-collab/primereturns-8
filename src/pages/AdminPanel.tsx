@@ -18,7 +18,7 @@ import { useAuthStore } from '../store/useAuthStore';
 
 export const AdminPanel = () => {
   const currentUser = useAuthStore((state) => state.user);
-  const [activeAdminTab, setActiveAdminTab] = useState('payouts');
+  const [activeAdminTab, setActiveAdminTab] = useState('users');
   const [metrics, setMetrics] = useState<any>(null);
   const [activity, setActivity] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
