@@ -352,7 +352,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS transactions (
       id INT AUTO_INCREMENT PRIMARY KEY,
       user_id INT NOT NULL,
-      type ENUM('deposit','withdrawal','daily_return','referral_commission','balance_adjustment') NOT NULL,
+      type ENUM('deposit','withdrawal','daily_return','referral_commission','balance_adjustment','invested_adjustment','profit_adjustment','referral_earnings_adjustment') NOT NULL,
       amount_cents BIGINT NOT NULL,
       status ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
       description TEXT NOT NULL,
@@ -425,7 +425,7 @@ async function initDb() {
 
   // Keep existing Railway databases compatible when new enum values are added.
   await pool.query("ALTER TABLE users MODIFY role ENUM('user','admin','super_admin') NOT NULL DEFAULT 'user'").catch(() => {});
-  await pool.query("ALTER TABLE transactions MODIFY type ENUM('deposit','withdrawal','daily_return','referral_commission','balance_adjustment') NOT NULL").catch(() => {});
+  await pool.query("ALTER TABLE transactions MODIFY type ENUM('deposit','withdrawal','daily_return','referral_commission','balance_adjustment','invested_adjustment','profit_adjustment','referral_earnings_adjustment') NOT NULL").catch(() => {});
   await pool.query("ALTER TABLE users ADD COLUMN google_id VARCHAR(191) UNIQUE").catch(() => {});
   await pool.query("ALTER TABLE users ADD COLUMN github_id VARCHAR(191) UNIQUE").catch(() => {});
   await pool.query("ALTER TABLE users ADD INDEX idx_users_created_at (created_at)").catch(() => {});
@@ -1494,6 +1494,231 @@ app.post('/api/super-admin/me/balance', auth, superAdminOnly, asyncRoute(async (
     }, req);
 
     const [[updatedUser]] = await requireDb().query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    res.json({ ok: true, user: apiUser(updatedUser) });
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}));
+
+app.post('/api/super-admin/users/:id/invested', auth, superAdminOnly, asyncRoute(async (req, res) => {
+  const targetUserId = Number(req.params.id);
+  const mode = String(req.body.mode || '').trim().toLowerCase();
+  const reason = String(req.body.reason || '').trim().slice(0, 500);
+  const amountCents = toCents(req.body.amount);
+
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    throw Object.assign(new Error('Invalid target user id.'), { status: 400 });
+  }
+
+  if (!['set', 'add', 'subtract'].includes(mode)) {
+    throw Object.assign(new Error('Adjustment mode must be set, add, or subtract.'), { status: 400 });
+  }
+
+  if (mode !== 'set' && amountCents <= 0) {
+    throw Object.assign(new Error('Adjustment amount must be greater than zero.'), { status: 400 });
+  }
+
+  if (reason.length < 5) {
+    throw Object.assign(new Error('A clear reason is required for manual adjustments.'), { status: 400 });
+  }
+
+  const conn = await requireDb().getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[targetUser]] = await conn.query('SELECT * FROM users WHERE id = ? FOR UPDATE', [targetUserId]);
+    if (!targetUser) throw Object.assign(new Error('Target user not found.'), { status: 404 });
+
+    const current = Number(targetUser.total_invested_cents);
+    let next = current;
+
+    if (mode === 'set') next = amountCents;
+    if (mode === 'add') next = current + amountCents;
+    if (mode === 'subtract') next = current - amountCents;
+
+    if (next < 0) {
+      throw Object.assign(new Error('Adjustment would make total invested negative.'), { status: 400 });
+    }
+
+    const delta = next - current;
+    await conn.query('UPDATE users SET total_invested_cents = ? WHERE id = ?', [next, targetUserId]);
+    await conn.query(
+      'INSERT INTO transactions (user_id, type, amount_cents, status, description) VALUES (?, ?, ?, ?, ?)',
+      [
+        targetUserId,
+        'invested_adjustment',
+        Math.abs(delta),
+        'completed',
+        `Super admin ${mode} total invested adjustment. Previous: KSh ${fromCents(current)}. New: KSh ${fromCents(next)}. Delta: KSh ${fromCents(delta)}. Reason: ${reason}`,
+      ]
+    );
+
+    await conn.commit();
+
+    await logAudit(req.user.id, 'super_admin.invested_adjustment', {
+      targetUserId,
+      targetEmail: targetUser.email,
+      mode,
+      amount: fromCents(amountCents),
+      previousValue: fromCents(current),
+      newValue: fromCents(next),
+      delta: fromCents(delta),
+      reason,
+    }, req);
+
+    const [[updatedUser]] = await requireDb().query('SELECT * FROM users WHERE id = ?', [targetUserId]);
+    res.json({ ok: true, user: apiUser(updatedUser) });
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}));
+
+app.post('/api/super-admin/users/:id/profit', auth, superAdminOnly, asyncRoute(async (req, res) => {
+  const targetUserId = Number(req.params.id);
+  const mode = String(req.body.mode || '').trim().toLowerCase();
+  const reason = String(req.body.reason || '').trim().slice(0, 500);
+  const amountCents = toCents(req.body.amount);
+
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    throw Object.assign(new Error('Invalid target user id.'), { status: 400 });
+  }
+
+  if (!['set', 'add', 'subtract'].includes(mode)) {
+    throw Object.assign(new Error('Adjustment mode must be set, add, or subtract.'), { status: 400 });
+  }
+
+  if (mode !== 'set' && amountCents <= 0) {
+    throw Object.assign(new Error('Adjustment amount must be greater than zero.'), { status: 400 });
+  }
+
+  if (reason.length < 5) {
+    throw Object.assign(new Error('A clear reason is required for manual adjustments.'), { status: 400 });
+  }
+
+  const conn = await requireDb().getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[targetUser]] = await conn.query('SELECT * FROM users WHERE id = ? FOR UPDATE', [targetUserId]);
+    if (!targetUser) throw Object.assign(new Error('Target user not found.'), { status: 404 });
+
+    const current = Number(targetUser.total_earned_cents);
+    let next = current;
+
+    if (mode === 'set') next = amountCents;
+    if (mode === 'add') next = current + amountCents;
+    if (mode === 'subtract') next = current - amountCents;
+
+    if (next < 0) {
+      throw Object.assign(new Error('Adjustment would make total profit negative.'), { status: 400 });
+    }
+
+    const delta = next - current;
+    await conn.query('UPDATE users SET total_earned_cents = ? WHERE id = ?', [next, targetUserId]);
+    await conn.query(
+      'INSERT INTO transactions (user_id, type, amount_cents, status, description) VALUES (?, ?, ?, ?, ?)',
+      [
+        targetUserId,
+        'profit_adjustment',
+        Math.abs(delta),
+        'completed',
+        `Super admin ${mode} total profit adjustment. Previous: KSh ${fromCents(current)}. New: KSh ${fromCents(next)}. Delta: KSh ${fromCents(delta)}. Reason: ${reason}`,
+      ]
+    );
+
+    await conn.commit();
+
+    await logAudit(req.user.id, 'super_admin.profit_adjustment', {
+      targetUserId,
+      targetEmail: targetUser.email,
+      mode,
+      amount: fromCents(amountCents),
+      previousValue: fromCents(current),
+      newValue: fromCents(next),
+      delta: fromCents(delta),
+      reason,
+    }, req);
+
+    const [[updatedUser]] = await requireDb().query('SELECT * FROM users WHERE id = ?', [targetUserId]);
+    res.json({ ok: true, user: apiUser(updatedUser) });
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}));
+
+app.post('/api/super-admin/users/:id/referral-earnings', auth, superAdminOnly, asyncRoute(async (req, res) => {
+  const targetUserId = Number(req.params.id);
+  const mode = String(req.body.mode || '').trim().toLowerCase();
+  const reason = String(req.body.reason || '').trim().slice(0, 500);
+  const amountCents = toCents(req.body.amount);
+
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    throw Object.assign(new Error('Invalid target user id.'), { status: 400 });
+  }
+
+  if (!['set', 'add', 'subtract'].includes(mode)) {
+    throw Object.assign(new Error('Adjustment mode must be set, add, or subtract.'), { status: 400 });
+  }
+
+  if (mode !== 'set' && amountCents <= 0) {
+    throw Object.assign(new Error('Adjustment amount must be greater than zero.'), { status: 400 });
+  }
+
+  if (reason.length < 5) {
+    throw Object.assign(new Error('A clear reason is required for manual adjustments.'), { status: 400 });
+  }
+
+  const conn = await requireDb().getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[targetUser]] = await conn.query('SELECT * FROM users WHERE id = ? FOR UPDATE', [targetUserId]);
+    if (!targetUser) throw Object.assign(new Error('Target user not found.'), { status: 404 });
+
+    const current = Number(targetUser.total_referral_earnings_cents);
+    let next = current;
+
+    if (mode === 'set') next = amountCents;
+    if (mode === 'add') next = current + amountCents;
+    if (mode === 'subtract') next = current - amountCents;
+
+    if (next < 0) {
+      throw Object.assign(new Error('Adjustment would make total referral earnings negative.'), { status: 400 });
+    }
+
+    const delta = next - current;
+    await conn.query('UPDATE users SET total_referral_earnings_cents = ? WHERE id = ?', [next, targetUserId]);
+    await conn.query(
+      'INSERT INTO transactions (user_id, type, amount_cents, status, description) VALUES (?, ?, ?, ?, ?)',
+      [
+        targetUserId,
+        'referral_earnings_adjustment',
+        Math.abs(delta),
+        'completed',
+        `Super admin ${mode} referral earnings adjustment. Previous: KSh ${fromCents(current)}. New: KSh ${fromCents(next)}. Delta: KSh ${fromCents(delta)}. Reason: ${reason}`,
+      ]
+    );
+
+    await conn.commit();
+
+    await logAudit(req.user.id, 'super_admin.referral_earnings_adjustment', {
+      targetUserId,
+      targetEmail: targetUser.email,
+      mode,
+      amount: fromCents(amountCents),
+      previousValue: fromCents(current),
+      newValue: fromCents(next),
+      delta: fromCents(delta),
+      reason,
+    }, req);
+
+    const [[updatedUser]] = await requireDb().query('SELECT * FROM users WHERE id = ?', [targetUserId]);
     res.json({ ok: true, user: apiUser(updatedUser) });
   } catch (error) {
     await conn.rollback();

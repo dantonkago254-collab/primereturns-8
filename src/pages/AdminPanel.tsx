@@ -136,6 +136,84 @@ export const AdminPanel = () => {
     }
   };
 
+  const adjustUserInvested = async (targetUser: any) => {
+    const mode = window.prompt('Type action: set, add, or subtract', 'add')?.trim().toLowerCase();
+    if (!mode) return;
+    if (!['set', 'add', 'subtract'].includes(mode)) {
+      alert('Invalid action. Use set, add, or subtract.');
+      return;
+    }
+
+    const amount = window.prompt(`Amount in KSh to ${mode} for ${targetUser.email}'s Total Invested:`, '1000');
+    if (!amount) return;
+
+    const reason = window.prompt('Reason for this adjustment:', 'Admin correction');
+    if (!reason) return;
+
+    try {
+      await apiFetch(`/api/super-admin/users/${targetUser.id}/invested`, {
+        method: 'POST',
+        body: JSON.stringify({ mode, amount, reason }),
+      });
+      await reloadAdmin();
+      alert('Total Invested adjustment saved and audited.');
+    } catch (error) {
+      alert((error as Error).message || 'Adjustment failed.');
+    }
+  };
+
+  const adjustUserProfit = async (targetUser: any) => {
+    const mode = window.prompt('Type action: set, add, or subtract', 'add')?.trim().toLowerCase();
+    if (!mode) return;
+    if (!['set', 'add', 'subtract'].includes(mode)) {
+      alert('Invalid action. Use set, add, or subtract.');
+      return;
+    }
+
+    const amount = window.prompt(`Amount in KSh to ${mode} for ${targetUser.email}'s Total Profit:`, '1000');
+    if (!amount) return;
+
+    const reason = window.prompt('Reason for this adjustment:', 'Admin correction');
+    if (!reason) return;
+
+    try {
+      await apiFetch(`/api/super-admin/users/${targetUser.id}/profit`, {
+        method: 'POST',
+        body: JSON.stringify({ mode, amount, reason }),
+      });
+      await reloadAdmin();
+      alert('Total Profit adjustment saved and audited.');
+    } catch (error) {
+      alert((error as Error).message || 'Adjustment failed.');
+    }
+  };
+
+  const adjustUserReferralEarnings = async (targetUser: any) => {
+    const mode = window.prompt('Type action: set, add, or subtract', 'add')?.trim().toLowerCase();
+    if (!mode) return;
+    if (!['set', 'add', 'subtract'].includes(mode)) {
+      alert('Invalid action. Use set, add, or subtract.');
+      return;
+    }
+
+    const amount = window.prompt(`Amount in KSh to ${mode} for ${targetUser.email}'s Referral Earnings:`, '1000');
+    if (!amount) return;
+
+    const reason = window.prompt('Reason for this adjustment:', 'Admin correction');
+    if (!reason) return;
+
+    try {
+      await apiFetch(`/api/super-admin/users/${targetUser.id}/referral-earnings`, {
+        method: 'POST',
+        body: JSON.stringify({ mode, amount, reason }),
+      });
+      await reloadAdmin();
+      alert('Referral Earnings adjustment saved and audited.');
+    } catch (error) {
+      alert((error as Error).message || 'Adjustment failed.');
+    }
+  };
+
   const adjustOwnBalance = async () => {
     const mode = window.prompt('Type balance action: set, add, or subtract', 'add')?.trim().toLowerCase();
     if (!mode) return;
@@ -457,12 +535,32 @@ export const AdminPanel = () => {
                         </td>
                         {currentUser?.role === 'super_admin' && (
                           <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => adjustUserBalance(user)}
-                              className="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-black hover:bg-amber-500/20 border border-amber-500/20 transition-colors"
-                            >
-                              Adjust Balance
-                            </button>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <button
+                                onClick={() => adjustUserBalance(user)}
+                                className="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-black hover:bg-amber-500/20 border border-amber-500/20 transition-colors"
+                              >
+                                Adjust Balance
+                              </button>
+                              <button
+                                onClick={() => adjustUserInvested(user)}
+                                className="px-3 py-2 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-black hover:bg-blue-500/20 border border-blue-500/20 transition-colors"
+                              >
+                                Edit Invested
+                              </button>
+                              <button
+                                onClick={() => adjustUserProfit(user)}
+                                className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-black hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"
+                              >
+                                Edit Profit
+                              </button>
+                              <button
+                                onClick={() => adjustUserReferralEarnings(user)}
+                                className="px-3 py-2 rounded-lg bg-violet-500/10 text-violet-400 text-xs font-black hover:bg-violet-500/20 border border-violet-500/20 transition-colors"
+                              >
+                                Edit Ref Earnings
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>
