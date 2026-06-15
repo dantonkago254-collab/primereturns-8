@@ -16,7 +16,7 @@ import {
 import { useAuthStore } from '../store/useAuthStore';
 import { formatKSH, cn } from '../lib/utils';
 import { ReferralDashboard } from '../components/ReferralDashboard';
-import { AIAssistant } from '../components/AIAssistant';
+// import { AIAssistant } from '../components/AIAssistant'; // Disabled: AI widget removed from dashboard
 import { apiFetch } from '../lib/api';
 
 export const Dashboard = () => {
@@ -490,8 +490,8 @@ export const Dashboard = () => {
         </div>
       </main>
 
-      {/* AI Assistant — context-aware for the active tab */}
-      <AIAssistant
+      {/* AI Assistant — disabled, widget removed from dashboard */}
+      {/* <AIAssistant
         pageContext={
           activeTab === 'investments'
             ? 'investments'
@@ -499,7 +499,7 @@ export const Dashboard = () => {
             ? 'referrals'
             : 'dashboard'
         }
-      />
+      /> */}
     </div>
   );
 };
