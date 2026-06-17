@@ -81,7 +81,7 @@ app.use(compression());
 app.use(rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: true, legacyHeaders: false }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.disable('x-powered-by');
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 const toCents = (amount) => {
   const normalized = String(amount).replace(/,/g, '').trim();
